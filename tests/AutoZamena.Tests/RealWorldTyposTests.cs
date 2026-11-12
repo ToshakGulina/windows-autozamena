@@ -53,16 +53,45 @@ public sealed class RealWorldTyposTests
 
     [Theory]
     [InlineData("привте ", "привет ")]
+    [InlineData("приввет ", "привет ")]
     [InlineData("чот ", "что ")]
     [InlineData("пожалуста ", "пожалуйста ")]
     [InlineData("незнаю ", "не знаю ")]
     [InlineData("вобщем ", "в общем ")]
     [InlineData("програма ", "программа ")]
+    [InlineData("чтото ", "что-то ")]
+    [InlineData("порусски ", "по-русски ")]
+    [InlineData("вопервых ", "во-первых ")]
+    [InlineData("по-руски ", "по-русски ")]
+    [InlineData("кто-нибуть ", "кто-нибудь ")]
+    [InlineData("интернет-магозин ", "интернет-магазин ")]
     [InlineData("teh ", "the ")]
     [InlineData("recieve ", "receive ")]
+    [InlineData("dont ", "don't ")]
+    [InlineData("doesnt ", "doesn't ")]
     public void CommonOrthographicAndTranspositionTypos_AreFixed(string input, string expected)
     {
         var engine = new AutoCorrectEngine();
+        Assert.Equal(expected, engine.SimulateText(input));
+    }
+
+    [Fact]
+    public void QuotesAndParenthesesAroundWords_AllowCleanCorrectionInsideProse()
+    {
+        var engine = new AutoCorrectEngine();
+        const string input = "он написал (привте) и «возврапщатся» и \"пожалуста\" в чат ";
+        const string expected = "он написал (привет) и «возвращаться» и \"пожалуйста\" в чат ";
+
+        Assert.Equal(expected, engine.SimulateText(input));
+    }
+
+    [Fact]
+    public void FollowUpSentenceWithImperativesAndCases_PreservesAllValidWordsAndCapitalizesSentence()
+    {
+        var engine = new AutoCorrectEngine();
+        const string input = "проверь ещё раз, чтоб не было багов и ошибок. и улучши, если необходимо ";
+        const string expected = "проверь ещё раз, чтоб не было багов и ошибок. И улучши, если необходимо ";
+
         Assert.Equal(expected, engine.SimulateText(input));
     }
 

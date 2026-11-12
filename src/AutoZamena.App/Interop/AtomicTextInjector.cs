@@ -1,121 +1,98 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
-using System.Threading;
 using AutoZamena.Core.Models;
 
 namespace AutoZamena.App.Interop;
 
 /// <summary>
-/// Executes diff-based text replacements atomically via Win32 SendInput on a dedicated
-/// highest-priority worker thread so WH_KEYBOARD_LL never blocks or risks hook timeouts.
+/// Builds and dispatches atomic Win32 <c>SendInput</c> batches (minimal Backspace diff + UTF-16 KEYEVENTF_UNICODE text + delimiter)
+/// stamped with <see cref="NativeMethods.MagicExtraInfo"/> so our keyboard hook ignores synthetic events.
+/// Dispatches synchronously in &lt; 0.05 ms so fast subsequent physical keystrokes can never overtake the replacement!
 /// </summary>
-public sealed class AtomicTextInjector : IDisposable
+internal static class AtomicTextInjector
 {
     private const ushort PrimaryLangRussian = 0x19;
     private const ushort PrimaryLangEnglish = 0x09;
 
-    private readonly BlockingCollection<CorrectionResult> _queue = new(64);
-    private readonly Thread _worker;
-    private volatile bool _disposed;
+    private static IntPtr[] _cachedHkls = Array.Empty<IntPtr>();
+    private static long _lastHklRefreshTick;
 
-    public AtomicTextInjector()
+    public static void Dispatch(CorrectionResult result)
     {
-        _worker = new Thread(WorkerLoop)
-        {
-            IsBackground = true,
-            Priority = ThreadPriority.Highest,
-            Name = "AutoZamena-SendInputWorker"
-        };
-        _worker.Start();
-    }
-
-    public void Enqueue(CorrectionResult correction)
-    {
-        if (_disposed || !correction.HasChange)
+        if (!result.HasChange)
         {
             return;
         }
 
-        _queue.TryAdd(correction);
+        ExecuteInjection(result);
     }
 
-    private void WorkerLoop()
+    private static void ExecuteInjection(CorrectionResult result)
     {
-        int inputSize = Marshal.SizeOf<NativeMethods.INPUT>();
+        var inputs = new List<NativeMethods.INPUT>(
+            (result.BackspacesCount + result.AppendText.Length + 4) * 2
+        );
 
-        try
+        // Temporarily release physical Shift if held so synthetic VK_BACK / VK_SPACE never act as Shift+Backspace
+        bool lShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_LSHIFT) & 0x8000) != 0;
+        bool rShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RSHIFT) & 0x8000) != 0;
+
+        if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: true);
+        if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: true);
+
+        // 1. Minimal Backspace diff
+        for (int i = 0; i < result.BackspacesCount; i++)
         {
-            foreach (CorrectionResult job in _queue.GetConsumingEnumerable())
-            {
-                if (_disposed)
-                {
-                    break;
-                }
+            AddVkKey(inputs, NativeMethods.VK_BACK, keyUp: false);
+            AddVkKey(inputs, NativeMethods.VK_BACK, keyUp: true);
+        }
 
-                ExecuteInjection(job, inputSize);
+        // 2. Replacement text via layout-independent UTF-16 KEYEVENTF_UNICODE
+        AppendUnicodeString(inputs, result.AppendText);
+
+        // 3. Trailing delimiter (when delimiter keystroke was swallowed for atomic replacement)
+        if (result.TrailingDelimiter.HasValue)
+        {
+            char d = result.TrailingDelimiter.Value;
+            if (d == ' ')
+            {
+                AddVkKey(inputs, NativeMethods.VK_SPACE, keyUp: false);
+                AddVkKey(inputs, NativeMethods.VK_SPACE, keyUp: true);
+            }
+            else if (d == '\t')
+            {
+                AddVkKey(inputs, NativeMethods.VK_TAB, keyUp: false);
+                AddVkKey(inputs, NativeMethods.VK_TAB, keyUp: true);
+            }
+            else if (d is '\r' or '\n')
+            {
+                AddVkKey(inputs, NativeMethods.VK_RETURN, keyUp: false);
+                AddVkKey(inputs, NativeMethods.VK_RETURN, keyUp: true);
+            }
+            else
+            {
+                AppendUnicodeString(inputs, d.ToString());
             }
         }
-        catch (ObjectDisposedException)
+
+        // Restore physical Shift state if user is still holding it for the next word
+        if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: false);
+        if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: false);
+
+        if (inputs.Count > 0)
         {
-            // Clean shutdown
-        }
-    }
-
-    private static void ExecuteInjection(CorrectionResult job, int inputStructSize)
-    {
-        int totalEvents = (job.BackspacesCount * 2) + (job.AppendText.Length * 2) + (job.TrailingDelimiter.HasValue ? 2 : 0);
-        if (totalEvents > 0)
-        {
-            var inputs = new List<NativeMethods.INPUT>(totalEvents);
-
-            // 1. Minimal diff Backspaces
-            for (int i = 0; i < job.BackspacesCount; i++)
-            {
-                AddVirtualKeyTap(inputs, NativeMethods.VK_BACK);
-            }
-
-            // 2. Replacement suffix via KEYEVENTF_UNICODE (immune to CapsLock, held Shift, and pending layout change)
-            foreach (char ch in job.AppendText)
-            {
-                AddUnicodeCharTap(inputs, ch);
-            }
-
-            // 3. Re-emit swallowed delimiter
-            if (job.TrailingDelimiter.HasValue)
-            {
-                char delim = job.TrailingDelimiter.Value;
-                if (delim == ' ')
-                {
-                    AddVirtualKeyTap(inputs, NativeMethods.VK_SPACE);
-                }
-                else if (delim == '\t')
-                {
-                    AddVirtualKeyTap(inputs, NativeMethods.VK_TAB);
-                }
-                else if (delim is '\r' or '\n')
-                {
-                    AddVirtualKeyTap(inputs, NativeMethods.VK_RETURN);
-                }
-                else
-                {
-                    AddUnicodeCharTap(inputs, delim);
-                }
-            }
-
             NativeMethods.INPUT[] arr = inputs.ToArray();
-            _ = NativeMethods.SendInput((uint)arr.Length, arr, inputStructSize);
+            NativeMethods.SendInput((uint)arr.Length, arr, Marshal.SizeOf<NativeMethods.INPUT>());
         }
 
-        // 4. Switch active window keyboard layout if requested (e.g. "ghbdtn" -> "привет" switches EN -> RU)
-        if (job.SwitchLayoutTo != TargetLanguage.None)
+        if (result.SwitchLayoutTo != TargetLanguage.None)
         {
-            SwitchActiveWindowLayout(job.SwitchLayoutTo);
+            SwitchActiveWindowKeyboardLayout(result.SwitchLayoutTo);
         }
     }
 
-    private static void AddVirtualKeyTap(List<NativeMethods.INPUT> list, ushort vk)
+    private static void AddVkKey(List<NativeMethods.INPUT> list, ushort vk, bool keyUp)
     {
         list.Add(new NativeMethods.INPUT
         {
@@ -126,23 +103,7 @@ public sealed class AtomicTextInjector : IDisposable
                 {
                     wVk = vk,
                     wScan = 0,
-                    dwFlags = 0,
-                    time = 0,
-                    dwExtraInfo = NativeMethods.MagicExtraInfo
-                }
-            }
-        });
-
-        list.Add(new NativeMethods.INPUT
-        {
-            type = NativeMethods.INPUT_KEYBOARD,
-            U = new NativeMethods.InputUnion
-            {
-                ki = new NativeMethods.KEYBDINPUT
-                {
-                    wVk = vk,
-                    wScan = 0,
-                    dwFlags = NativeMethods.KEYEVENTF_KEYUP,
+                    dwFlags = keyUp ? NativeMethods.KEYEVENTF_KEYUP : 0u,
                     time = 0,
                     dwExtraInfo = NativeMethods.MagicExtraInfo
                 }
@@ -150,99 +111,113 @@ public sealed class AtomicTextInjector : IDisposable
         });
     }
 
-    private static void AddUnicodeCharTap(List<NativeMethods.INPUT> list, char utf16Char)
+    private static void AppendUnicodeString(List<NativeMethods.INPUT> list, string text)
     {
-        list.Add(new NativeMethods.INPUT
+        for (int i = 0; i < text.Length; i++)
         {
-            type = NativeMethods.INPUT_KEYBOARD,
-            U = new NativeMethods.InputUnion
+            ushort codeUnit = text[i];
+            list.Add(new NativeMethods.INPUT
             {
-                ki = new NativeMethods.KEYBDINPUT
+                type = NativeMethods.INPUT_KEYBOARD,
+                U = new NativeMethods.InputUnion
                 {
-                    wVk = 0,
-                    wScan = utf16Char,
-                    dwFlags = NativeMethods.KEYEVENTF_UNICODE,
-                    time = 0,
-                    dwExtraInfo = NativeMethods.MagicExtraInfo
+                    ki = new NativeMethods.KEYBDINPUT
+                    {
+                        wVk = 0,
+                        wScan = codeUnit,
+                        dwFlags = NativeMethods.KEYEVENTF_UNICODE,
+                        time = 0,
+                        dwExtraInfo = NativeMethods.MagicExtraInfo
+                    }
                 }
-            }
-        });
+            });
 
-        list.Add(new NativeMethods.INPUT
-        {
-            type = NativeMethods.INPUT_KEYBOARD,
-            U = new NativeMethods.InputUnion
+            list.Add(new NativeMethods.INPUT
             {
-                ki = new NativeMethods.KEYBDINPUT
+                type = NativeMethods.INPUT_KEYBOARD,
+                U = new NativeMethods.InputUnion
                 {
-                    wVk = 0,
-                    wScan = utf16Char,
-                    dwFlags = NativeMethods.KEYEVENTF_UNICODE | NativeMethods.KEYEVENTF_KEYUP,
-                    time = 0,
-                    dwExtraInfo = NativeMethods.MagicExtraInfo
+                    ki = new NativeMethods.KEYBDINPUT
+                    {
+                        wVk = 0,
+                        wScan = codeUnit,
+                        dwFlags = NativeMethods.KEYEVENTF_UNICODE | NativeMethods.KEYEVENTF_KEYUP,
+                        time = 0,
+                        dwExtraInfo = NativeMethods.MagicExtraInfo
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
-    public static void SwitchActiveWindowLayout(TargetLanguage targetLanguage)
+    public static void SwitchActiveWindowKeyboardLayout(TargetLanguage target)
     {
-        ushort wantedPrimary = targetLanguage switch
+        ushort desiredPrimaryLang = target switch
         {
             TargetLanguage.Russian => PrimaryLangRussian,
             TargetLanguage.English => PrimaryLangEnglish,
             _ => (ushort)0
         };
 
-        if (wantedPrimary == 0)
+        if (desiredPrimaryLang == 0)
         {
             return;
         }
 
-        IntPtr targetHkl = FindInstalledLayout(wantedPrimary);
-        if (targetHkl == IntPtr.Zero)
+        IntPtr[] hkls = GetInstalledKeyboardLayoutsCached();
+        IntPtr matchedHkl = IntPtr.Zero;
+        for (int i = 0; i < hkls.Length; i++)
+        {
+            ushort langId = (ushort)((ulong)hkls[i] & 0xFFFF);
+            ushort primary = (ushort)(langId & 0x03FF);
+            if (primary == desiredPrimaryLang)
+            {
+                matchedHkl = hkls[i];
+                break;
+            }
+        }
+
+        if (matchedHkl == IntPtr.Zero)
         {
             return;
         }
 
         (IntPtr focusHwnd, IntPtr topHwnd, _, _) = NativeMethods.GetActiveFocusAndLayout();
-        if (focusHwnd != IntPtr.Zero)
+        IntPtr targetHwnd = focusHwnd != IntPtr.Zero ? focusHwnd : topHwnd;
+        if (targetHwnd != IntPtr.Zero)
         {
-            NativeMethods.PostMessageW(focusHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, targetHkl);
-        }
-        if (topHwnd != IntPtr.Zero && topHwnd != focusHwnd)
-        {
-            NativeMethods.PostMessageW(topHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, targetHkl);
+            NativeMethods.PostMessageW(targetHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, matchedHkl);
         }
     }
 
-    private static IntPtr FindInstalledLayout(ushort primaryLangId)
+    private static IntPtr[] GetInstalledKeyboardLayoutsCached()
     {
+        long now = Environment.TickCount64;
+        if (_cachedHkls.Length > 0 && (now - _lastHklRefreshTick) < 10_000)
+        {
+            return _cachedHkls;
+        }
+
         int count = NativeMethods.GetKeyboardLayoutList(0, null);
         if (count <= 0)
         {
-            return IntPtr.Zero;
+            return Array.Empty<IntPtr>();
         }
 
-        var list = new IntPtr[count];
-        int actual = NativeMethods.GetKeyboardLayoutList(count, list);
-        for (int i = 0; i < actual; i++)
+        var hkls = new IntPtr[count];
+        int actual = NativeMethods.GetKeyboardLayoutList(count, hkls);
+        if (actual <= 0)
         {
-            ushort langId = unchecked((ushort)((long)list[i] & 0xFFFF));
-            ushort primary = (ushort)(langId & 0x03FF);
-            if (primary == primaryLangId)
-            {
-                return list[i];
-            }
+            return Array.Empty<IntPtr>();
         }
 
-        return IntPtr.Zero;
-    }
+        if (actual != count)
+        {
+            Array.Resize(ref hkls, actual);
+        }
 
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        _queue.CompleteAdding();
+        _cachedHkls = hkls;
+        _lastHklRefreshTick = now;
+        return hkls;
     }
 }

@@ -21,6 +21,30 @@ public sealed class AutoCorrectEngine
         'b', 'c', 'd', 'e', 'f', 'g', 'h', 'j', 'k', 'l', 'm', 'n', 'p', 'q', 'r', 's', 't', 'v', 'w', 'x', 'y', 'z'
     };
 
+    private static readonly HashSet<string> RuValidHyphenAffixes = new(StringComparer.Ordinal)
+    {
+        "то", "либо", "нибудь", "таки", "ка", "де", "с",
+        "по", "кое", "кой", "во", "в", "из", "под", "над",
+        "пол", "полу", "экс", "вице", "мини", "макси", "микро", "макро", "мульти", "супер", "топ",
+        "веб", "онлайн", "офлайн", "оффлайн", "телеграм", "айти", "санкт", "нью", "лос"
+    };
+
+    private static readonly Dictionary<string, string> ExplicitHyphenFixes = new(StringComparer.Ordinal)
+    {
+        ["по-руски"] = "по-русски",
+        ["по-англиски"] = "по-английски",
+        ["по-мойму"] = "по-моему",
+        ["кто-нибуть"] = "кто-нибудь",
+        ["что-нибуть"] = "что-нибудь",
+        ["где-нибуть"] = "где-нибудь",
+        ["куда-нибуть"] = "куда-нибудь",
+        ["когда-нибуть"] = "когда-нибудь",
+        ["как-нибуть"] = "как-нибудь",
+        ["какой-нибуть"] = "какой-нибудь",
+        ["все-тки"] = "всё-таки",
+        ["всё-тки"] = "всё-таки"
+    };
+
     private readonly LexiconDatabase _lexicon;
     private readonly UserDictionary _userDictionary;
 
@@ -34,9 +58,11 @@ public sealed class AutoCorrectEngine
 
     private PendingBrokenStub? _prevUnfixedStub;
     private CompletedTailAddition? _lastTailAddition;
+    private CompletedHotkeyToken? _lastCompletedForHotkey;
     private UndoSnapshot? _undoSnapshot;
 
     private bool _afterSentenceEndPunct;
+    private bool _suppressAutoCapOnce;
     private bool _sawSentencePunctWithoutSpace;
     private bool _afterDotOrColonWithoutSpace;
     private bool _inCompoundToken;
@@ -71,13 +97,20 @@ public sealed class AutoCorrectEngine
         long TimestampMs
     );
 
+    private readonly record struct CompletedHotkeyToken(
+        string OnScreenWord,
+        string TrailingDelimiter
+    );
+
     private readonly record struct UndoSnapshot(
         string OriginalTokenForLearn,
         string OriginalOnScreenBeforeDelimiter,
         string CurrentOnScreenWithDelimiter,
         TargetLanguage RevertLayoutTo,
         RuWordEntry? PreviousRuBeforeCorrection,
-        EnWordEntry? PreviousEnBeforeCorrection
+        EnWordEntry? PreviousEnBeforeCorrection,
+        bool LearnIgnoreOnConfirm,
+        bool RestoreSentenceCapSuppression
     );
 
     public void ResetContext()
@@ -88,8 +121,10 @@ public sealed class AutoCorrectEngine
         _prevEnWord = null;
         _prevUnfixedStub = null;
         _lastTailAddition = null;
+        _lastCompletedForHotkey = null;
         _undoSnapshot = null;
         _afterSentenceEndPunct = false;
+        _suppressAutoCapOnce = false;
         _sawSentencePunctWithoutSpace = false;
         _afterDotOrColonWithoutSpace = false;
         _inCompoundToken = false;
@@ -97,8 +132,8 @@ public sealed class AutoCorrectEngine
     }
 
     /// <summary>
-    /// Feeds a non-whitespace character typed by the user.
-    /// Returns a <see cref="CorrectionResult"/> only when a punctuation delimiter triggers an immediate fix;
+    /// Feeds a character typed by the user.
+    /// Returns a <see cref="CorrectionResult"/> only when a delimiter triggers an immediate fix;
     /// otherwise returns <see cref="CorrectionResult.NoChange"/>.
     /// </summary>
     public CorrectionResult OnCharacter(KeyStrokeEvent ev)
@@ -118,7 +153,33 @@ public sealed class AutoCorrectEngine
             return res;
         }
 
-        // Check if this character is a punctuation delimiter vs part of a word / wrong-layout token
+        // Opening bracket/quote at the very start of a token: "(привте)", "«привте»", "“hello”"
+        // Note: ASCII '"' and '\'' are NOT stripped here because on US QWERTY they map to Russian 'Э'/'э' ("nj -> Это)!
+        if (_rawSinceWhitespace.Count == 0 && c is '(' or '[' or '«' or '„' or '“' or '—' or '–')
+        {
+            // Note: '[' maps to Russian 'х' ("хлеб" = "[kt,"), so keep '[' in _rawSinceWhitespace!
+            if (c != '[')
+            {
+                _sawSentencePunctWithoutSpace = false;
+                _afterDotOrColonWithoutSpace = false;
+                return CorrectionResult.NoChange;
+            }
+        }
+
+        // Closing bracket / typographic quote OR closing ASCII '"' after a Cyrillic/Latin word: "(привте)", "\"привте\""
+        if (IsClosingBracketOrQuoteDelimiter(c))
+        {
+            CorrectionResult closeRes = EvaluateCurrentBufferOnDelimiter(c, ev.TimestampMs, allowWrongLayoutRaw: true);
+            _wordEvents.Clear();
+            _rawSinceWhitespace.Clear();
+            _prevUnfixedStub = null;
+            _lastTailAddition = null;
+            _afterDotOrColonWithoutSpace = false;
+            _inCompoundToken = false;
+            return closeRes;
+        }
+
+        // Check if this character is a sentence/clause punctuation delimiter vs wrong-layout Russian letter
         if (IsSentenceOrClauseDelimiter(c))
         {
             // Could c be a Russian letter typed on an EN keyboard (e.g. 'k.,k.' = 'люблю' or ';bpym' = 'жизнь')?
@@ -168,11 +229,17 @@ public sealed class AutoCorrectEngine
         }
         else
         {
-            // Symbol like [, ], ', `, ", @, / — keep in _rawSinceWhitespace for layout/URL checks
-            if (!KeyboardGeometry.IsEnKeyForRuLetter(c))
+            // Function call 'myfunc(' or technical symbol '@', '/', '_' mid-token -> mark compound!
+            // Leading '"' at index 0 is allowed so "\"привте\"" and "\"nj" (Это) both work seamlessly.
+            bool isLeadingDoubleQuote = _rawSinceWhitespace.Count == 1 && c == '"';
+            if (!isLeadingDoubleQuote && !KeyboardGeometry.IsEnKeyForRuLetter(c))
             {
                 _wordEvents.Clear();
                 _inCompoundToken = true;
+            }
+            else if (!isLeadingDoubleQuote)
+            {
+                _wordEvents.Clear();
             }
         }
 
@@ -192,6 +259,17 @@ public sealed class AutoCorrectEngine
             _afterSentenceEndPunct = true;
             _sawSentencePunctWithoutSpace = false;
             _inCompoundToken = false;
+            return CorrectionResult.NoChange;
+        }
+
+        // Handle space-before-period style ("ок . на") where '.' had been tentatively buffered at index 0
+        if (_rawSinceWhitespace.Count == 1 && _rawSinceWhitespace[0].Character == '.')
+        {
+            _afterSentenceEndPunct = true;
+            _sawSentencePunctWithoutSpace = false;
+            _inCompoundToken = false;
+            _wordEvents.Clear();
+            _rawSinceWhitespace.Clear();
             return CorrectionResult.NoChange;
         }
 
@@ -220,7 +298,7 @@ public sealed class AutoCorrectEngine
             UndoSnapshot snap = _undoSnapshot.Value;
             _undoSnapshot = null;
 
-            if (!string.IsNullOrEmpty(snap.OriginalTokenForLearn))
+            if (snap.LearnIgnoreOnConfirm && !string.IsNullOrEmpty(snap.OriginalTokenForLearn))
             {
                 _tempUndoSuppressed.Add(snap.OriginalTokenForLearn);
                 if (Settings.AutoLearnOnUndo)
@@ -229,10 +307,16 @@ public sealed class AutoCorrectEngine
                 }
             }
 
+            if (snap.RestoreSentenceCapSuppression)
+            {
+                _suppressAutoCapOnce = true;
+            }
+
             _prevRuWord = snap.PreviousRuBeforeCorrection;
             _prevEnWord = snap.PreviousEnBeforeCorrection;
             _prevUnfixedStub = null;
             _lastTailAddition = null;
+            _lastCompletedForHotkey = null;
 
             // Rebuild buffer to match restored token so user can either press Space or edit further
             _wordEvents.Clear();
@@ -262,6 +346,7 @@ public sealed class AutoCorrectEngine
         _undoSnapshot = null;
         _prevUnfixedStub = null;
         _lastTailAddition = null;
+        _lastCompletedForHotkey = null;
 
         if (_rawSinceWhitespace.Count > 0)
         {
@@ -282,6 +367,7 @@ public sealed class AutoCorrectEngine
     /// <summary>
     /// Explicitly converts the layout (RU &lt;-&gt; EN) of the currently buffered word or the just-finished word
     /// when the user presses the global layout-convert hotkey (e.g. Pause/Break).
+    /// Works on ALL words (even valid dictionary words like "tot " -&gt; "еще " or "да " -&gt; "lf ") and toggles cleanly!
     /// </summary>
     public CorrectionResult ConvertLastWordLayoutByHotkey()
     {
@@ -318,22 +404,23 @@ public sealed class AutoCorrectEngine
             }
         }
 
-        // Case 2: User already pressed Space after a token (e.g. "ghbdtn ")
-        if (_prevUnfixedStub.HasValue && _prevUnfixedStub.Value.DelimiterUsed == ' ')
+        // Case 2: User already pressed Space/delimiter after a token (including valid words like "tot " -> "еще ")
+        if (_lastCompletedForHotkey.HasValue)
         {
-            string raw = _prevUnfixedStub.Value.RawToken;
-            string currentScreenWord = _prevUnfixedStub.Value.CommittedOnScreen;
-            (string converted, TargetLanguage targetLang) = ConvertTokenOppositeLayout(raw);
-            if (converted != raw && targetLang != TargetLanguage.None)
+            string currentWord = _lastCompletedForHotkey.Value.OnScreenWord;
+            string delim = _lastCompletedForHotkey.Value.TrailingDelimiter;
+            (string converted, TargetLanguage targetLang) = ConvertTokenOppositeLayout(currentWord);
+            if (converted != currentWord && targetLang != TargetLanguage.None)
             {
-                string onScreen = currentScreenWord + " ";
-                string desired = converted + " ";
+                string onScreen = currentWord + delim;
+                string desired = converted + delim;
+                _lastCompletedForHotkey = new CompletedHotkeyToken(converted, delim);
                 _prevUnfixedStub = null;
                 UpdatePreviousLanguageContext(converted);
 
                 return CorrectionResult.FromDiff(
                     CorrectionKind.HotkeyLayoutSwitch,
-                    raw,
+                    currentWord,
                     onScreen,
                     desired,
                     trailingDelimiter: null,
@@ -418,8 +505,10 @@ public sealed class AutoCorrectEngine
         }
 
         bool shouldCapSentence =
-            (_afterSentenceEndPunct && Settings.AutoCapitalizeAfterSentence) ||
-            (!_hasTypedAnyWordInContext && Settings.AutoCapitalizeFirstWord);
+            !_suppressAutoCapOnce &&
+            ((_afterSentenceEndPunct && Settings.AutoCapitalizeAfterSentence) ||
+             (!_hasTypedAnyWordInContext && Settings.AutoCapitalizeFirstWord));
+        _suppressAutoCapOnce = false;
 
         // Save previous context snapshot for potential Undo
         RuWordEntry? savedPrevRu = _prevRuWord;
@@ -452,8 +541,7 @@ public sealed class AutoCorrectEngine
             );
         }
 
-        // Check URL / code / numbers / symbols / mid-dot compound guard on rawSpan BEFORE anything else,
-        // EXCEPT when rawSpan is an EN-layout Russian word (e.g. "k.,k." or ";bpym")!
+        // Check URL / code / numbers / symbols / mid-dot compound guard on rawSpan BEFORE anything else
         if (_inCompoundToken ||
             TokenGuards.ContainsDisqualifyingSymbolOrDigit(rawSpan) ||
             TokenGuards.LooksLikeUrlOrDomain(rawSpan))
@@ -464,11 +552,13 @@ public sealed class AutoCorrectEngine
             _prevEnWord = null;
             _prevUnfixedStub = null;
             _lastTailAddition = null;
+            _lastCompletedForHotkey = null;
             return CorrectionResult.NoChange;
         }
 
-        // 2. Wrong keyboard layout auto-detection (e.g. "ghbdtn" -> "привет", "k.,k." -> "люблю", "руддщ" -> "hello")
+        // 2. Wrong keyboard layout auto-detection (e.g. "ghbdtn" -> "привет", "k.,k." -> "люблю", "\"nj" -> "Это")
         if (Settings.LayoutMode == LayoutSwitchMode.AutoHighConfidenceAndHotkey &&
+            !TokenGuards.HasExpressiveLetterRepeat(rawSpan) &&
             (allowWrongLayoutRaw || rawSpan == wordToken))
         {
             CorrectionResult? layoutFix = TryAutoFixWrongLayout(
@@ -484,17 +574,43 @@ public sealed class AutoCorrectEngine
             }
         }
 
-        // From here on we need a clean word token matching rawSpan
-        if (string.IsNullOrEmpty(wordToken) || wordToken != rawSpan)
+        // Support leading opening ASCII '"' before a clean word (e.g. "\"привте\"" or "\"возврапщатся ")
+        string leadingQuote = string.Empty;
+        if (rawSpan.Length == wordToken.Length + 1 &&
+            rawSpan[0] == '"' &&
+            !string.IsNullOrEmpty(wordToken) &&
+            rawSpan.AsSpan(1).SequenceEqual(wordToken.AsSpan()))
+        {
+            leadingQuote = "\"";
+        }
+        else if (string.IsNullOrEmpty(wordToken) || wordToken != rawSpan)
         {
             _afterSentenceEndPunct = false;
             _hasTypedAnyWordInContext = true;
             _prevUnfixedStub = new PendingBrokenStub(rawSpan, rawSpan, CasingKind.Lower, delimiter, timestampMs);
+            _lastCompletedForHotkey = new CompletedHotkeyToken(rawSpan, delimiter.ToString());
             return CorrectionResult.NoChange;
         }
 
+        // Also check user snippet on unwrapped wordToken when preceded by opening quote
+        if (leadingQuote.Length > 0 && _userDictionary.TryGetCustomReplacement(wordToken, out string? quotedCustom))
+        {
+            return CommitCorrection(
+                CorrectionKind.UserSnippet,
+                wordToken,
+                leadingQuote + wordToken,
+                leadingQuote + quotedCustom,
+                delimiter,
+                TargetLanguage.None,
+                savedPrevRu,
+                savedPrevEn,
+                1.0,
+                "Личная автозамена"
+            );
+        }
+
         // 3. Spacebar Rollover checks ("приве т " -> "привет " and delayed tail "назад д " -> "назад ")
-        if (Settings.FixSpacebarRollover && wordToken.Length == 1 && delimiter == ' ')
+        if (leadingQuote.Length == 0 && Settings.FixSpacebarRollover && wordToken.Length == 1 && delimiter == ' ')
         {
             char singleLower = char.ToLowerInvariant(wordToken[0]);
 
@@ -545,6 +661,7 @@ public sealed class AutoCorrectEngine
                         string rawTypedTwoTokens = stub.RawToken + " " + wordToken;
                         _prevUnfixedStub = null;
                         _lastTailAddition = null;
+                        _lastCompletedForHotkey = new CompletedHotkeyToken(desiredMerged, delimiter.ToString());
                         UpdatePreviousLanguageContext(desiredMerged);
 
                         var mergeRes = CorrectionResult.FromDiff(
@@ -564,7 +681,9 @@ public sealed class AutoCorrectEngine
                             desiredMerged + delimiter,
                             TargetLanguage.None,
                             savedPrevRu,
-                            savedPrevEn
+                            savedPrevEn,
+                            LearnIgnoreOnConfirm: false,
+                            RestoreSentenceCapSuppression: false
                         );
                         return mergeRes;
                     }
@@ -584,6 +703,7 @@ public sealed class AutoCorrectEngine
             _afterSentenceEndPunct = false;
             _hasTypedAnyWordInContext = true;
             _prevUnfixedStub = null;
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
             UpdatePreviousLanguageContext(wordToken);
             return CorrectionResult.NoChange;
         }
@@ -593,8 +713,55 @@ public sealed class AutoCorrectEngine
             _afterSentenceEndPunct = false;
             _hasTypedAnyWordInContext = true;
             _prevUnfixedStub = null;
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
             UpdatePreviousLanguageContext(wordToken);
             return CorrectionResult.NoChange;
+        }
+
+        // Expressive stretched words ("ммм", "дааа", "нееет", "ооочень", "nooo", "hmmm"): never "fix" letters!
+        if (TokenGuards.HasExpressiveLetterRepeat(wordToken))
+        {
+            if (shouldCapSentence && casing == CasingKind.Lower && leadingQuote.Length == 0)
+            {
+                string capExpr = TokenGuards.ApplyCasing(lower, CasingKind.Capitalized, forceCapitalize: true);
+                return CommitCorrection(
+                    CorrectionKind.AutoCapitalize,
+                    wordToken,
+                    wordToken,
+                    capExpr,
+                    delimiter,
+                    TargetLanguage.None,
+                    savedPrevRu,
+                    savedPrevEn,
+                    0.99,
+                    "Заглавная буква в начале предложения",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: true
+                );
+            }
+
+            _afterSentenceEndPunct = false;
+            _hasTypedAnyWordInContext = true;
+            _prevUnfixedStub = null;
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
+            return CorrectionResult.NoChange;
+        }
+
+        // Handle hyphenated words ("кто-то", "по-русски", "по-руски" -> "по-русски", "телеграм-канал")
+        if (TokenGuards.IsWellFormedHyphenatedWord(lower, out bool hyphRu, out bool hyphEn))
+        {
+            return EvaluateHyphenatedWord(
+                wordToken,
+                lower,
+                leadingQuote,
+                casing,
+                hyphRu,
+                hyphEn,
+                shouldCapSentence,
+                delimiter,
+                savedPrevRu,
+                savedPrevEn
+            );
         }
 
         // 4. Sticky Shift Double-Caps check (ПРивет -> Привет) when underlying word is valid or protected
@@ -603,15 +770,15 @@ public sealed class AutoCorrectEngine
         bool isPureRu = TokenGuards.IsPureCyrillicWord(lower);
         bool isPureEn = !isPureRu && TokenGuards.IsPureLatinWord(lower);
 
-        // 5. Explicit unambiguous fixes ("незнаю" -> "не знаю", "вобщем" -> "в общем", "teh" -> "the")
+        // 5. Explicit unambiguous fixes ("незнаю" -> "не знаю", "вобщем" -> "в общем", "чтото" -> "что-то", "dont" -> "don't")
         if (Settings.FixTypos && !isProtected && _lexicon.TryGetExplicitFix(lower, out string? explicitTarget))
         {
-            string casedTarget = TokenGuards.ApplyCasing(explicitTarget, casing, shouldCapSentence);
+            string casedTarget = TokenGuards.ApplyCasing(explicitTarget, casing, shouldCapSentence && leadingQuote.Length == 0);
             return CommitCorrection(
                 CorrectionKind.ExplicitFix,
                 wordToken,
-                wordToken,
-                casedTarget,
+                leadingQuote + wordToken,
+                leadingQuote + casedTarget,
                 delimiter,
                 TargetLanguage.None,
                 savedPrevRu,
@@ -630,12 +797,12 @@ public sealed class AutoCorrectEngine
                 string? reflexiveFix = TryFixValidReflexiveVerbGrammar(lower, knownRu, _prevRuWord.Value);
                 if (reflexiveFix is not null)
                 {
-                    string casedReflexive = TokenGuards.ApplyCasing(reflexiveFix, casing, shouldCapSentence);
+                    string casedReflexive = TokenGuards.ApplyCasing(reflexiveFix, casing, shouldCapSentence && leadingQuote.Length == 0);
                     return CommitCorrection(
                         CorrectionKind.Typo,
                         wordToken,
-                        wordToken,
-                        casedReflexive,
+                        leadingQuote + wordToken,
+                        leadingQuote + casedReflexive,
                         delimiter,
                         TargetLanguage.None,
                         savedPrevRu,
@@ -653,18 +820,20 @@ public sealed class AutoCorrectEngine
                 return CommitCorrection(
                     CorrectionKind.DoubleCaps,
                     wordToken,
-                    wordToken,
-                    fixedCaps,
+                    leadingQuote + wordToken,
+                    leadingQuote + fixedCaps,
                     delimiter,
                     TargetLanguage.None,
                     savedPrevRu,
                     savedPrevEn,
                     0.99,
-                    "Исправление залипшего Shift"
+                    "Исправление залипшего Shift",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: false
                 );
             }
 
-            if (shouldCapSentence && casing == CasingKind.Lower)
+            if (shouldCapSentence && casing == CasingKind.Lower && leadingQuote.Length == 0)
             {
                 string capWord = TokenGuards.ApplyCasing(lower, CasingKind.Capitalized, forceCapitalize: true);
                 return CommitCorrection(
@@ -677,15 +846,17 @@ public sealed class AutoCorrectEngine
                     savedPrevRu,
                     savedPrevEn,
                     0.99,
-                    "Заглавная буква в начале предложения"
+                    "Заглавная буква в начале предложения",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: true
                 );
             }
 
             _afterSentenceEndPunct = false;
             _hasTypedAnyWordInContext = true;
             _prevUnfixedStub = null;
-            if (!isProtected) _prevRuWord = knownRu;
-            else _prevRuWord = null;
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
+            _prevRuWord = !isProtected ? knownRu : null;
             _prevEnWord = null;
             return CorrectionResult.NoChange;
         }
@@ -698,18 +869,20 @@ public sealed class AutoCorrectEngine
                 return CommitCorrection(
                     CorrectionKind.DoubleCaps,
                     wordToken,
-                    wordToken,
-                    fixedCaps,
+                    leadingQuote + wordToken,
+                    leadingQuote + fixedCaps,
                     delimiter,
                     TargetLanguage.None,
                     savedPrevRu,
                     savedPrevEn,
                     0.99,
-                    "Исправление залипшего Shift"
+                    "Исправление залипшего Shift",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: false
                 );
             }
 
-            if (shouldCapSentence && casing == CasingKind.Lower)
+            if (shouldCapSentence && casing == CasingKind.Lower && leadingQuote.Length == 0)
             {
                 string capWord = TokenGuards.ApplyCasing(lower, CasingKind.Capitalized, forceCapitalize: true);
                 return CommitCorrection(
@@ -722,15 +895,17 @@ public sealed class AutoCorrectEngine
                     savedPrevRu,
                     savedPrevEn,
                     0.99,
-                    "Заглавная буква в начале предложения"
+                    "Заглавная буква в начале предложения",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: true
                 );
             }
 
             _afterSentenceEndPunct = false;
             _hasTypedAnyWordInContext = true;
             _prevUnfixedStub = null;
-            if (!isProtected) _prevEnWord = knownEn;
-            else _prevEnWord = null;
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
+            _prevEnWord = !isProtected ? knownEn : null;
             _prevRuWord = null;
             return CorrectionResult.NoChange;
         }
@@ -740,7 +915,8 @@ public sealed class AutoCorrectEngine
         {
             bool isMidSentenceCap = casing == CasingKind.Capitalized &&
                                     !shouldCapSentence &&
-                                    _hasTypedAnyWordInContext;
+                                    _hasTypedAnyWordInContext &&
+                                    leadingQuote.Length == 0;
 
             ReadOnlySpan<KeyStrokeEvent> eventsSpan = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_wordEvents);
 
@@ -757,13 +933,14 @@ public sealed class AutoCorrectEngine
 
                 if (bestRu.HasValue)
                 {
-                    string finalWord = TokenGuards.ApplyCasing(bestRu.Value.Word, casing, shouldCapSentence);
+                    string finalWord = TokenGuards.ApplyCasing(bestRu.Value.Word, casing, shouldCapSentence && leadingQuote.Length == 0);
                     string reason = bestRu.Value.ContextBoost >= 0.8f
                         ? "Опечатка + контекст соседнего слова"
                         : "Геометрия клавиш и частотность";
 
                     // Record tail-completion metadata in case of a lagging spacebar-rollover key
-                    if (bestRu.Value.Word.Length == lower.Length + 1 &&
+                    if (leadingQuote.Length == 0 &&
+                        bestRu.Value.Word.Length == lower.Length + 1 &&
                         bestRu.Value.Word.StartsWith(lower, StringComparison.Ordinal))
                     {
                         _lastTailAddition = new CompletedTailAddition(
@@ -777,8 +954,8 @@ public sealed class AutoCorrectEngine
                     CorrectionResult ruFix = CommitCorrection(
                         CorrectionKind.Typo,
                         wordToken,
-                        wordToken,
-                        finalWord,
+                        leadingQuote + wordToken,
+                        leadingQuote + finalWord,
                         delimiter,
                         TargetLanguage.None,
                         savedPrevRu,
@@ -786,7 +963,10 @@ public sealed class AutoCorrectEngine
                         bestRu.Value.Score,
                         reason
                     );
-                    _prevUnfixedStub = new PendingBrokenStub(wordToken, finalWord, casing, delimiter, timestampMs);
+                    if (leadingQuote.Length == 0)
+                    {
+                        _prevUnfixedStub = new PendingBrokenStub(wordToken, finalWord, casing, delimiter, timestampMs);
+                    }
                     return ruFix;
                 }
             }
@@ -803,12 +983,13 @@ public sealed class AutoCorrectEngine
 
                 if (bestEn.HasValue)
                 {
-                    string finalWord = TokenGuards.ApplyCasing(bestEn.Value.Word, casing, shouldCapSentence);
+                    string finalWord = TokenGuards.ApplyCasing(bestEn.Value.Word, casing, shouldCapSentence && leadingQuote.Length == 0);
                     string reason = bestEn.Value.ContextBoost >= 0.8f
                         ? "Typo + bigram context"
                         : "Геометрия клавиш (EN)";
 
-                    if (bestEn.Value.Word.Length == lower.Length + 1 &&
+                    if (leadingQuote.Length == 0 &&
+                        bestEn.Value.Word.Length == lower.Length + 1 &&
                         bestEn.Value.Word.StartsWith(lower, StringComparison.Ordinal))
                     {
                         _lastTailAddition = new CompletedTailAddition(
@@ -822,8 +1003,8 @@ public sealed class AutoCorrectEngine
                     CorrectionResult enFix = CommitCorrection(
                         CorrectionKind.Typo,
                         wordToken,
-                        wordToken,
-                        finalWord,
+                        leadingQuote + wordToken,
+                        leadingQuote + finalWord,
                         delimiter,
                         TargetLanguage.None,
                         savedPrevRu,
@@ -831,7 +1012,10 @@ public sealed class AutoCorrectEngine
                         bestEn.Value.Score,
                         reason
                     );
-                    _prevUnfixedStub = new PendingBrokenStub(wordToken, finalWord, casing, delimiter, timestampMs);
+                    if (leadingQuote.Length == 0)
+                    {
+                        _prevUnfixedStub = new PendingBrokenStub(wordToken, finalWord, casing, delimiter, timestampMs);
+                    }
                     return enFix;
                 }
             }
@@ -840,7 +1024,176 @@ public sealed class AutoCorrectEngine
         // Word was left untouched (e.g. unknown slang, name, or incomplete broken stub like "приве")
         _afterSentenceEndPunct = false;
         _hasTypedAnyWordInContext = true;
-        _prevUnfixedStub = new PendingBrokenStub(wordToken, wordToken, casing, delimiter, timestampMs);
+        if (leadingQuote.Length == 0)
+        {
+            _prevUnfixedStub = new PendingBrokenStub(wordToken, wordToken, casing, delimiter, timestampMs);
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
+        }
+        _prevRuWord = null;
+        _prevEnWord = null;
+        return CorrectionResult.NoChange;
+    }
+
+    private CorrectionResult EvaluateHyphenatedWord(
+        string wordToken,
+        string lower,
+        string leadingQuote,
+        CasingKind casing,
+        bool isRu,
+        bool isEn,
+        bool shouldCapSentence,
+        char delimiter,
+        RuWordEntry? savedPrevRu,
+        EnWordEntry? savedPrevEn)
+    {
+        if (Settings.FixTypos && ExplicitHyphenFixes.TryGetValue(lower, out string? explicitHyph))
+        {
+            string casedTarget = TokenGuards.ApplyCasing(explicitHyph, casing, shouldCapSentence && leadingQuote.Length == 0);
+            return CommitCorrection(
+                CorrectionKind.ExplicitFix,
+                wordToken,
+                leadingQuote + wordToken,
+                leadingQuote + casedTarget,
+                delimiter,
+                TargetLanguage.None,
+                savedPrevRu,
+                savedPrevEn,
+                0.99,
+                "Дефисная орфография"
+            );
+        }
+
+        string[] parts = lower.Split('-');
+        bool allPartsValid = true;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            string p = parts[i];
+            bool validPart = isRu
+                ? (_lexicon.IsKnownRuWord(p) || _lexicon.IsProtectedWord(p) || RuValidHyphenAffixes.Contains(p))
+                : (_lexicon.IsKnownEnWord(p) || _lexicon.IsProtectedWord(p));
+            if (!validPart)
+            {
+                allPartsValid = false;
+                break;
+            }
+        }
+
+        if (allPartsValid)
+        {
+            if (Settings.FixDoubleCaps && casing == CasingKind.StickyDoubleCaps && wordToken.Length >= 4)
+            {
+                string fixedCaps = TokenGuards.ApplyCasing(lower, CasingKind.Capitalized, forceCapitalize: true);
+                return CommitCorrection(
+                    CorrectionKind.DoubleCaps,
+                    wordToken,
+                    leadingQuote + wordToken,
+                    leadingQuote + fixedCaps,
+                    delimiter,
+                    TargetLanguage.None,
+                    savedPrevRu,
+                    savedPrevEn,
+                    0.99,
+                    "Исправление залипшего Shift",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: false
+                );
+            }
+
+            if (shouldCapSentence && casing == CasingKind.Lower && leadingQuote.Length == 0)
+            {
+                string capWord = TokenGuards.ApplyCasing(lower, CasingKind.Capitalized, forceCapitalize: true);
+                return CommitCorrection(
+                    CorrectionKind.AutoCapitalize,
+                    wordToken,
+                    wordToken,
+                    capWord,
+                    delimiter,
+                    TargetLanguage.None,
+                    savedPrevRu,
+                    savedPrevEn,
+                    0.99,
+                    "Заглавная буква в начале предложения",
+                    learnIgnoreOnConfirm: false,
+                    restoreSentenceCapSuppression: true
+                );
+            }
+
+            _afterSentenceEndPunct = false;
+            _hasTypedAnyWordInContext = true;
+            _prevUnfixedStub = null;
+            _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
+            UpdatePreviousLanguageContext(parts[^1]);
+            return CorrectionResult.NoChange;
+        }
+
+        // Conservative single-segment typo correction for 2-part Russian hyphenated words (e.g. "интернет-магозин" -> "интернет-магазин")
+        if (Settings.FixTypos && isRu && parts.Length == 2)
+        {
+            bool p0Valid = _lexicon.IsKnownRuWord(parts[0]) || _lexicon.IsProtectedWord(parts[0]) || RuValidHyphenAffixes.Contains(parts[0]);
+            bool p1Valid = _lexicon.IsKnownRuWord(parts[1]) || _lexicon.IsProtectedWord(parts[1]) || RuValidHyphenAffixes.Contains(parts[1]);
+
+            if (p0Valid && !p1Valid && parts[1].Length >= 5)
+            {
+                ScoredCandidate? cand1 = NoisyChannelScorer.FindBestRuCandidate(
+                    _lexicon,
+                    parts[1],
+                    ReadOnlySpan<KeyStrokeEvent>.Empty,
+                    null,
+                    SensitivityLevel.Conservative,
+                    isMidSentenceCapitalized: false
+                );
+                if (cand1.HasValue && cand1.Value.EditCost <= 0.90f && cand1.Value.Score >= 3.8f)
+                {
+                    string rebuilt = parts[0] + "-" + cand1.Value.Word;
+                    string casedRebuilt = TokenGuards.ApplyCasing(rebuilt, casing, shouldCapSentence && leadingQuote.Length == 0);
+                    return CommitCorrection(
+                        CorrectionKind.Typo,
+                        wordToken,
+                        leadingQuote + wordToken,
+                        leadingQuote + casedRebuilt,
+                        delimiter,
+                        TargetLanguage.None,
+                        savedPrevRu,
+                        savedPrevEn,
+                        cand1.Value.Score,
+                        "Опечатка в дефисном слове"
+                    );
+                }
+            }
+            else if (!p0Valid && p1Valid && parts[0].Length >= 5)
+            {
+                ScoredCandidate? cand0 = NoisyChannelScorer.FindBestRuCandidate(
+                    _lexicon,
+                    parts[0],
+                    ReadOnlySpan<KeyStrokeEvent>.Empty,
+                    null,
+                    SensitivityLevel.Conservative,
+                    isMidSentenceCapitalized: false
+                );
+                if (cand0.HasValue && cand0.Value.EditCost <= 0.90f && cand0.Value.Score >= 3.8f)
+                {
+                    string rebuilt = cand0.Value.Word + "-" + parts[1];
+                    string casedRebuilt = TokenGuards.ApplyCasing(rebuilt, casing, shouldCapSentence && leadingQuote.Length == 0);
+                    return CommitCorrection(
+                        CorrectionKind.Typo,
+                        wordToken,
+                        leadingQuote + wordToken,
+                        leadingQuote + casedRebuilt,
+                        delimiter,
+                        TargetLanguage.None,
+                        savedPrevRu,
+                        savedPrevEn,
+                        cand0.Value.Score,
+                        "Опечатка в дефисном слове"
+                    );
+                }
+            }
+        }
+
+        _afterSentenceEndPunct = false;
+        _hasTypedAnyWordInContext = true;
+        _prevUnfixedStub = null;
+        _lastCompletedForHotkey = new CompletedHotkeyToken(wordToken, delimiter.ToString());
         _prevRuWord = null;
         _prevEnWord = null;
         return CorrectionResult.NoChange;
@@ -1014,11 +1367,14 @@ public sealed class AutoCorrectEngine
         RuWordEntry? savedPrevRu,
         EnWordEntry? savedPrevEn,
         double confidence,
-        string reason)
+        string reason,
+        bool learnIgnoreOnConfirm = true,
+        bool restoreSentenceCapSuppression = false)
     {
         _afterSentenceEndPunct = false;
         _hasTypedAnyWordInContext = true;
         _prevUnfixedStub = null;
+        _lastCompletedForHotkey = new CompletedHotkeyToken(desiredWord, delimiter.ToString());
 
         UpdatePreviousLanguageContext(desiredWord);
 
@@ -1040,7 +1396,9 @@ public sealed class AutoCorrectEngine
             desiredWord + delimiter,
             revertLayout,
             savedPrevRu,
-            savedPrevEn
+            savedPrevEn,
+            learnIgnoreOnConfirm,
+            restoreSentenceCapSuppression
         );
 
         return CorrectionResult.FromDiff(
@@ -1057,9 +1415,15 @@ public sealed class AutoCorrectEngine
 
     private void UpdatePreviousLanguageContext(string committedText)
     {
-        // If multi-word replacement (e.g. "не знаю"), take the last word for bigram context
-        int spaceIdx = committedText.LastIndexOf(' ');
-        string lastToken = (spaceIdx >= 0 ? committedText[(spaceIdx + 1)..] : committedText).ToLowerInvariant();
+        // Strip outer quote if present and take last word/segment for bigram context
+        string clean = committedText.Trim('"');
+        int spaceIdx = clean.LastIndexOf(' ');
+        string lastToken = (spaceIdx >= 0 ? clean[(spaceIdx + 1)..] : clean).ToLowerInvariant();
+        int hyphIdx = lastToken.LastIndexOf('-');
+        if (hyphIdx >= 0 && hyphIdx < lastToken.Length - 1)
+        {
+            lastToken = lastToken[(hyphIdx + 1)..];
+        }
 
         if (_lexicon.TryGetRuWord(lastToken, out RuWordEntry ru))
         {
@@ -1099,6 +1463,34 @@ public sealed class AutoCorrectEngine
         }
 
         return (raw, TargetLanguage.None);
+    }
+
+    private bool IsClosingBracketOrQuoteDelimiter(char c)
+    {
+        if (c is ')' or '»' or '”')
+        {
+            return true;
+        }
+
+        if (c == '"' && _wordEvents.Count > 0)
+        {
+            // If current buffered word is Cyrillic (e.g. "привте") OR started with opening '"' (e.g. "\"teh\""),
+            // '"' is unambiguously a closing quote delimiter rather than Russian 'Э'!
+            if (_rawSinceWhitespace.Count > 0 && _rawSinceWhitespace[0].Character == '"')
+            {
+                return true;
+            }
+
+            for (int i = 0; i < _wordEvents.Count; i++)
+            {
+                if (KeyboardGeometry.IsCyrillicLetter(_wordEvents[i].Character))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     private bool ShouldDeferEnPunctuationForLayout(char c)

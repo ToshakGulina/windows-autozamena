@@ -18,11 +18,31 @@ public sealed class GuardAndSafetyTests
     }
 
     [Fact]
-    public void UrlsEmailsCodeTokensAndNumbers_AreNeverCorrupted()
+    public void InflectedModernLoanwordsAndHyphenatedWords_AreNeverCorrupted()
+    {
+        var engine = new AutoCorrectEngine();
+        const string modernProse =
+            "в телеграме и дискорде кто-то по-русски всё-таки обсудил тайминги, хоткеи, автозамены, фичи и деплоя пуллреквестов на гитхабе ";
+
+        Assert.Equal(modernProse, engine.SimulateText(modernProse));
+    }
+
+    [Fact]
+    public void ExpressiveStretchedChatWords_AreNeverTurnedIntoDryWords()
+    {
+        var engine = new AutoCorrectEngine();
+        const string expressive =
+            "ммм дааа нееет блииин ооочень круто спасииибо hmmm nooo sooo ";
+
+        Assert.Equal(expressive, engine.SimulateText(expressive));
+    }
+
+    [Fact]
+    public void UrlsEmailsCodeTokensFunctionCallsAndNumbers_AreNeverCorrupted()
     {
         var engine = new AutoCorrectEngine();
         const string technical =
-            "https://github.com/ToshakGulina user@example.com AutoZamena.exe useState foo_bar v2.4 ";
+            "https://github.com/ToshakGulina user@example.com AutoZamena.exe myfunc(привте) useState foo_bar win-x64 v2.4 ";
 
         Assert.Equal(technical, engine.SimulateText(technical));
     }

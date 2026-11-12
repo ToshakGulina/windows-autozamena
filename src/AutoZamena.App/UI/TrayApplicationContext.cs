@@ -1,5 +1,7 @@
 using System;
 using System.Drawing;
+using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 using AutoZamena.App.Config;
 using AutoZamena.App.Interop;
@@ -8,165 +10,260 @@ using AutoZamena.Core.Lexicon;
 
 namespace AutoZamena.App.UI;
 
+/// <summary>
+/// Hosts the persistent Windows system tray icon, context menu, settings window, and global input hooks.
+/// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
+    private readonly SynchronizationContext _uiSyncContext;
     private readonly AppConfig _config;
     private readonly AutoCorrectEngine _engine;
     private readonly WindowContextGuard _contextGuard;
-    private readonly AtomicTextInjector _injector;
     private readonly LowLevelInputHook _hook;
 
     private readonly Icon _iconActive;
-    private readonly Icon _iconStandby;
     private readonly Icon _iconPaused;
-
-    private readonly NotifyIcon _notifyIcon;
+    private readonly NotifyIcon _trayIcon;
     private readonly ToolStripMenuItem _miTogglePause;
+    private readonly ToolStripMenuItem _miExcludeLastApp;
     private readonly MainForm _mainForm;
+    private readonly RegisteredWaitHandle? _activateWaitRegistration;
 
-    private ContextStatus _currentContextStatus = ContextStatus.Allowed;
+    private string _lastExternalProcess = string.Empty;
 
-    public TrayApplicationContext(bool startMinimized)
+    public TrayApplicationContext(bool startMinimized, EventWaitHandle? activateSignal = null)
     {
+        WindowsFormsSynchronizationContext.AutoInstall = true;
+        _uiSyncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
+
         _config = AppConfig.Load();
 
         var userDict = new UserDictionary();
-        userDict.Load(_config.IgnoredWords, _config.CustomReplacements);
+        userDict.LoadFrom(_config.IgnoredWords, _config.CustomReplacements);
 
-        _engine = new AutoCorrectEngine(LexiconDatabase.Default, userDict, _config.Engine);
+        _engine = new AutoCorrectEngine(
+            lexicon: LexiconDatabase.Default,
+            userDictionary: userDict,
+            settings: _config.Engine
+        );
+
         _contextGuard = new WindowContextGuard();
-        _injector = new AtomicTextInjector();
-        _hook = new LowLevelInputHook(_engine, _config, _contextGuard, _injector);
+        _hook = new LowLevelInputHook(_engine, _contextGuard, _config);
 
-        _iconActive = TrayIconGenerator.CreateIcon(TrayVisualState.Active, 32);
-        _iconStandby = TrayIconGenerator.CreateIcon(TrayVisualState.StandbyFilteredApp, 32);
-        _iconPaused = TrayIconGenerator.CreateIcon(TrayVisualState.Paused, 32);
+        _iconActive = TrayIconGenerator.CreateStatusIcon(enabled: true);
+        _iconPaused = TrayIconGenerator.CreateStatusIcon(enabled: false);
 
-        _mainForm = new MainForm(_config, _engine, _hook, _iconActive, RefreshTrayState);
+        _mainForm = new MainForm(
+            _config,
+            _engine,
+            _hook,
+            _iconActive,
+            onConfigUpdated: OnConfigUpdatedFromUi
+        );
+
         _contextGuard.IsOwnSandboxFocused = () => _mainForm.IsSandboxInputFocused;
 
+        // Build Tray Context Menu
         var menu = new ContextMenuStrip();
-        var miOpen = new ToolStripMenuItem("Настройки и Песочница…", null, (_, _) => ShowMainWindow())
+
+        var miOpen = new ToolStripMenuItem("Открыть настройки и песочницу…")
         {
             Font = new Font("Segoe UI", 9f, FontStyle.Bold)
         };
-        _miTogglePause = new ToolStripMenuItem("Поставить на паузу", null, (_, _) => TogglePauseFromMenu());
-        var miExit = new ToolStripMenuItem("Выход", null, (_, _) => ExitApp());
+        miOpen.Click += (_, _) => ShowMainForm();
+
+        _miTogglePause = new ToolStripMenuItem();
+        _miTogglePause.Click += (_, _) => TogglePauseFromMenu();
+
+        _miExcludeLastApp = new ToolStripMenuItem("Не исправлять в активном приложении")
+        {
+            Enabled = false
+        };
+        _miExcludeLastApp.Click += (_, _) => ExcludeLastExternalProcess();
+
+        var miStartup = new ToolStripMenuItem("Запускать вместе с Windows")
+        {
+            Checked = StartupManager.IsStartupEnabled(),
+            CheckOnClick = true
+        };
+        miStartup.CheckedChanged += (_, _) => StartupManager.SetStartupEnabled(miStartup.Checked);
+
+        var miExit = new ToolStripMenuItem("Выход из AutoZamena");
+        miExit.Click += (_, _) => ExitCleanly();
 
         menu.Items.Add(miOpen);
         menu.Items.Add(_miTogglePause);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_miExcludeLastApp);
+        menu.Items.Add(miStartup);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(miExit);
 
-        _notifyIcon = new NotifyIcon
+        _trayIcon = new NotifyIcon
         {
-            Icon = _iconActive,
-            Text = "AutoZamena — Активна",
             ContextMenuStrip = menu,
             Visible = true
         };
-        _notifyIcon.DoubleClick += (_, _) => ShowMainWindow();
+        _trayIcon.DoubleClick += (_, _) => ShowMainForm();
 
-        _hook.PauseToggledByHotkey += () =>
-        {
-            _config.Save();
-            _mainForm.RefreshStatusBanner();
-            RefreshTrayState();
+        RefreshTrayVisuals();
 
-            if (_config.ShowTrayNotifications)
-            {
-                _notifyIcon.ShowBalloonTip(
-                    1500,
-                    "AutoZamena",
-                    _config.Engine.Enabled ? "Автозамена снова включена." : "Автозамена поставлена на паузу.",
-                    ToolTipIcon.Info
-                );
-            }
-        };
-
-        _hook.CorrectionApplied += entry => _mainForm.AppendHistoryEntry(entry);
-
-        _hook.ContextStatusChanged += (status, _) =>
-        {
-            _currentContextStatus = status;
-            if (_mainForm.IsHandleCreated)
-            {
-                _mainForm.BeginInvoke(RefreshTrayState);
-            }
-            else
-            {
-                RefreshTrayState();
-            }
-        };
-
-        RefreshTrayState();
+        // Wire hook events (all marshaled asynchronously onto UI thread so WH_KEYBOARD_LL never blocks)
+        _hook.PauseToggledByHotkey += OnPauseToggledByHotkey;
+        _hook.CorrectionApplied += OnCorrectionApplied;
+        _hook.ContextStatusChanged += OnContextStatusChanged;
         _hook.Start();
+
+        if (activateSignal is not null)
+        {
+            _activateWaitRegistration = ThreadPool.RegisterWaitForSingleObject(
+                activateSignal,
+                (_, _) => _uiSyncContext.Post(_ => ShowMainForm(), null),
+                state: null,
+                millisecondsTimeOutInterval: Timeout.Infinite,
+                executeOnlyOnce: false
+            );
+        }
 
         if (!startMinimized)
         {
-            ShowMainWindow();
+            ShowMainForm();
         }
     }
 
-    private void ShowMainWindow()
+    private void ShowMainForm()
     {
         if (!_mainForm.Visible)
         {
             _mainForm.Show();
         }
+
         if (_mainForm.WindowState == FormWindowState.Minimized)
         {
             _mainForm.WindowState = FormWindowState.Normal;
         }
+
         _mainForm.Activate();
+        _mainForm.BringToFront();
     }
 
     private void TogglePauseFromMenu()
     {
         _config.Engine.Enabled = !_config.Engine.Enabled;
-        _engine.Settings.Enabled = _config.Engine.Enabled;
-        _engine.ResetContext();
+        _hook.UpdateConfig(_config);
         _config.Save();
+        RefreshTrayVisuals();
         _mainForm.RefreshStatusBanner();
-        RefreshTrayState();
     }
 
-    private void RefreshTrayState()
+    private void OnPauseToggledByHotkey()
     {
-        bool enabled = _config.Engine.Enabled;
-        _miTogglePause.Text = enabled ? "Поставить на паузу" : "Включить автозамену";
-
-        if (!enabled)
+        _uiSyncContext.Post(_ =>
         {
-            _notifyIcon.Icon = _iconPaused;
-            _notifyIcon.Text = "AutoZamena — На паузе";
+            _config.Save();
+            RefreshTrayVisuals();
+            _mainForm.RefreshStatusBanner();
+
+            if (_config.ShowTrayNotifications)
+            {
+                bool active = _config.Engine.Enabled;
+                _trayIcon.ShowBalloonTip(
+                    1800,
+                    active ? "AutoZamena включена" : "AutoZamena на паузе",
+                    active
+                        ? "Автозамена снова исправляет опечатки на лету."
+                        : $"Автозамена приостановлена ({_config.PauseToggleHotkey.ToDisplayString()} — включить обратно).",
+                    ToolTipIcon.Info
+                );
+            }
+        }, null);
+    }
+
+    private void OnCorrectionApplied(CorrectionHistoryEntry entry)
+    {
+        _uiSyncContext.Post(_ => _mainForm.AppendHistoryEntry(entry), null);
+    }
+
+    private void OnContextStatusChanged(ContextStatus status, string procName)
+    {
+        if (string.IsNullOrWhiteSpace(procName) ||
+            string.Equals(procName, "AutoZamena", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(procName, "explorer", StringComparison.OrdinalIgnoreCase))
+        {
             return;
         }
 
-        if (_currentContextStatus is ContextStatus.FilteredApp or ContextStatus.FullscreenGame or ContextStatus.PasswordField)
+        _uiSyncContext.Post(_ =>
         {
-            _notifyIcon.Icon = _iconStandby;
-            _notifyIcon.Text = "AutoZamena — Отключена для текущего окна";
+            _lastExternalProcess = procName;
+            _miExcludeLastApp.Enabled = true;
+            _miExcludeLastApp.Text = $"Добавить «{procName}» в чёрный список";
+        }, null);
+    }
+
+    private void ExcludeLastExternalProcess()
+    {
+        if (string.IsNullOrWhiteSpace(_lastExternalProcess))
+        {
             return;
         }
 
-        _notifyIcon.Icon = _iconActive;
-        _notifyIcon.Text = "AutoZamena — Активна";
+        if (!_config.BlacklistedProcesses.Any(p => string.Equals(p, _lastExternalProcess, StringComparison.OrdinalIgnoreCase)))
+        {
+            _config.BlacklistedProcesses.Add(_lastExternalProcess);
+            _config.Save();
+            _hook.UpdateConfig(_config);
+            _mainForm.RefreshExternalProcessFilter();
+            _trayIcon.ShowBalloonTip(
+                1800,
+                "Приложение добавлено в исключения",
+                $"В программе «{_lastExternalProcess}» автозамена больше не будет срабатывать.",
+                ToolTipIcon.Info
+            );
+        }
     }
 
-    private void ExitApp()
+    private void OnConfigUpdatedFromUi()
     {
-        _notifyIcon.Visible = false;
-        _hook.Dispose();
-        _injector.Dispose();
-        _contextGuard.Dispose();
+        _hook.UpdateConfig(_config);
+        RefreshTrayVisuals();
+    }
+
+    private void RefreshTrayVisuals()
+    {
+        bool active = _config.Engine.Enabled;
+        _trayIcon.Icon = active ? _iconActive : _iconPaused;
+        string stateStr = active ? "Активна" : "На паузе";
+        string hk = _config.PauseToggleHotkey.ToDisplayString();
+        string tip = $"AutoZamena — {stateStr} ({hk})";
+        _trayIcon.Text = tip.Length <= 63 ? tip : tip[..63];
+        _miTogglePause.Text = active
+            ? $"Поставить на паузу ({hk})"
+            : $"Включить автозамену ({hk})";
+    }
+
+    private void ExitCleanly()
+    {
+        _activateWaitRegistration?.Unregister(null);
+        _hook.Stop();
+        _trayIcon.Visible = false;
         _mainForm.RequestApplicationExit();
-
-        _notifyIcon.Dispose();
-        _iconActive.Dispose();
-        _iconStandby.Dispose();
-        _iconPaused.Dispose();
-
         ExitThread();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _activateWaitRegistration?.Unregister(null);
+            _hook.Dispose();
+            _contextGuard.Dispose();
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            _iconActive.Dispose();
+            _iconPaused.Dispose();
+            _mainForm.Dispose();
+        }
+        base.Dispose(disposing);
     }
 }

@@ -205,7 +205,9 @@ public sealed class WindowContextGuard : IDisposable
             }
 
             uint style = NativeMethods.GetWindowLongW(topHwnd, NativeMethods.GWL_STYLE);
-            if ((style & NativeMethods.WS_CAPTION) != 0)
+            // Custom-chromed desktop apps (Electron, WinUI, Chromium) retain WS_THICKFRAME for resize/Aero Snap,
+            // whereas borderless fullscreen games use a frameless WS_POPUP window without caption or thickframe.
+            if ((style & (NativeMethods.WS_CAPTION | NativeMethods.WS_THICKFRAME)) != 0)
             {
                 return false;
             }
@@ -246,8 +248,13 @@ public sealed class WindowContextGuard : IDisposable
                procName.Equals("brave", StringComparison.OrdinalIgnoreCase) ||
                procName.Equals("opera", StringComparison.OrdinalIgnoreCase) ||
                procName.Equals("vivaldi", StringComparison.OrdinalIgnoreCase) ||
+               procName.Equals("browser", StringComparison.OrdinalIgnoreCase) ||
                procName.Equals("Telegram", StringComparison.OrdinalIgnoreCase) ||
                procName.Equals("Discord", StringComparison.OrdinalIgnoreCase) ||
+               procName.Equals("Slack", StringComparison.OrdinalIgnoreCase) ||
+               procName.Equals("Teams", StringComparison.OrdinalIgnoreCase) ||
+               procName.Equals("ms-teams", StringComparison.OrdinalIgnoreCase) ||
+               procName.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase) ||
                procName.Equals("Obsidian", StringComparison.OrdinalIgnoreCase) ||
                procName.Equals("Notion", StringComparison.OrdinalIgnoreCase);
     }

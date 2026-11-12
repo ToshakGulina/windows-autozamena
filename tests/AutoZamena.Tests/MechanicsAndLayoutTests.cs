@@ -62,6 +62,7 @@ public sealed class MechanicsAndLayoutTests
     [InlineData("k.,k. ", "люблю ")]
     [InlineData(";bpym ", "жизнь ")]
     [InlineData("[kt, ", "хлеб ")]
+    [InlineData("\"njn ", "Этот ")]
     [InlineData("руддщ ", "hello ")]
     public void WrongKeyboardLayout_AutoFixesHighConfidenceWordsIncludingPunctuationKeys(string input, string expected)
     {
@@ -83,6 +84,45 @@ public sealed class MechanicsAndLayoutTests
         Assert.Equal(CorrectionKind.HotkeyLayoutSwitch, hk.Kind);
         Assert.Equal("ок", hk.ReplacementText);
         Assert.Equal(TargetLanguage.Russian, hk.SwitchLayoutTo);
+    }
+
+    [Fact]
+    public void HotkeyLayoutConversion_WorksAfterSpaceOnKnownWordsAndTogglesBack()
+    {
+        var engine = new AutoCorrectEngine();
+
+        // "tot " is a valid English word, so auto-layout leaves it untouched until Pause/Break is pressed
+        Assert.Equal("tot ", engine.SimulateText("tot "));
+
+        CorrectionResult toRu = engine.ConvertLastWordLayoutByHotkey();
+        Assert.True(toRu.HasChange);
+        Assert.Equal("еще ", toRu.ReplacementText);
+        Assert.Equal(TargetLanguage.Russian, toRu.SwitchLayoutTo);
+
+        // Pressing Pause/Break a second time toggles right back to "tot "!
+        CorrectionResult backToEn = engine.ConvertLastWordLayoutByHotkey();
+        Assert.True(backToEn.HasChange);
+        Assert.Equal("tot ", backToEn.ReplacementText);
+        Assert.Equal(TargetLanguage.English, backToEn.SwitchLayoutTo);
+    }
+
+    [Fact]
+    public void UndoOnSentenceAutoCapitalize_SuppressesCapOnceWithoutPollutingIgnoredDictionary()
+    {
+        var engine = new AutoCorrectEngine();
+
+        // Type "привет. на " -> auto-capitalizes to "привет. На ", then Backspace reverts to "привет. на"
+        string afterUndo = engine.SimulateText("привет. на \b");
+        Assert.Equal("привет. на", afterUndo);
+
+        // Pressing Space again keeps lowercase "на " once AND must NOT add common word "на" to IgnoredWords!
+        CorrectionResult confirmSpace = engine.OnWhitespace(' ');
+        Assert.False(confirmSpace.HasChange);
+        Assert.False(engine.UserDictionary.IsIgnored("на"));
+
+        //Space-before-period chat style ("ок . на ") also capitalizes cleanly
+        engine.ResetContext();
+        Assert.Equal("ок . На ", engine.SimulateText("ок . на "));
     }
 
     [Fact]

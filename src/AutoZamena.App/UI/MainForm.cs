@@ -21,10 +21,12 @@ internal sealed class MainForm : Form
     private bool _allowRealClose;
 
     // Header banner controls
-    private Panel _headerPanel = null!;
+    private TableLayoutPanel _headerPanel = null!;
     private Label _lblStatusTitle = null!;
     private Label _lblStatusSub = null!;
     private Button _btnToggleEnabled = null!;
+    private SplitContainer? _dictionarySplit;
+    private bool _dictionarySplitInitialized;
 
     // Tab 1: General & Mechanics
     private ComboBox _cmbSensitivity = null!;
@@ -183,37 +185,54 @@ internal sealed class MainForm : Form
         RefreshDictionaryLists();
     }
 
+    public void RefreshExternalProcessFilter()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(RefreshExternalProcessFilter);
+            return;
+        }
+        RefreshProcessListBox();
+    }
+
     private void BuildLayout()
     {
-        // Top status banner
-        _headerPanel = new Panel
+        // High-DPI-safe top status banner using 2-column TableLayoutPanel
+        _headerPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 72,
+            AutoSize = true,
+            MinimumSize = new Size(0, 74),
+            ColumnCount = 2,
+            RowCount = 2,
             Padding = new Padding(18, 12, 18, 12)
         };
+        _headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
+        _headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _headerPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _headerPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         _lblStatusTitle = new Label
         {
             AutoSize = true,
-            Location = new Point(18, 12),
+            Margin = new Padding(0, 0, 12, 3),
             Font = new Font("Segoe UI", 11.5f, FontStyle.Bold)
         };
 
         _lblStatusSub = new Label
         {
             AutoSize = true,
-            Location = new Point(18, 40),
+            Margin = new Padding(0, 0, 12, 0),
             ForeColor = Color.FromArgb(80, 90, 102),
             Font = new Font("Segoe UI", 9f)
         };
 
         _btnToggleEnabled = new Button
         {
-            Width = 165,
-            Height = 38,
-            Anchor = AnchorStyles.Top | AnchorStyles.Right,
-            Location = new Point(ClientSize.Width - 185, 17),
+            AutoSize = true,
+            MinimumSize = new Size(165, 38),
+            Anchor = AnchorStyles.Right,
+            Margin = new Padding(8, 2, 0, 2),
             FlatStyle = FlatStyle.System
         };
         _btnToggleEnabled.Click += (_, _) =>
@@ -225,9 +244,10 @@ internal sealed class MainForm : Form
             RefreshStatusBanner();
         };
 
-        _headerPanel.Controls.Add(_lblStatusTitle);
-        _headerPanel.Controls.Add(_lblStatusSub);
-        _headerPanel.Controls.Add(_btnToggleEnabled);
+        _headerPanel.Controls.Add(_lblStatusTitle, 0, 0);
+        _headerPanel.Controls.Add(_lblStatusSub, 0, 1);
+        _headerPanel.Controls.Add(_btnToggleEnabled, 1, 0);
+        _headerPanel.SetRowSpan(_btnToggleEnabled, 2);
 
         // Main TabControl
         var tabs = new TabControl
@@ -429,6 +449,15 @@ internal sealed class MainForm : Form
         };
 
         _txtNewProcess = new TextBox { Width = 190, PlaceholderText = "Например: Code или cmd" };
+        _txtNewProcess.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                AddProcessToActiveList(_txtNewProcess.Text);
+                _txtNewProcess.Clear();
+            }
+        };
 
         var btnAddManual = new Button { Text = "Добавить", Width = 95, Height = 29 };
         btnAddManual.Click += (_, _) =>
@@ -491,8 +520,18 @@ internal sealed class MainForm : Form
         var split = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterDistance = 320
+            Orientation = Orientation.Vertical
+        };
+        _dictionarySplit = split;
+        split.SizeChanged += (_, _) =>
+        {
+            if (!_dictionarySplitInitialized && split.ClientSize.Width > 420)
+            {
+                _dictionarySplitInitialized = true;
+                split.Panel1MinSize = 240;
+                split.Panel2MinSize = 280;
+                split.SplitterDistance = (int)(split.ClientSize.Width * 0.42);
+            }
         };
 
         // Left: Ignored / Whitelisted words
@@ -514,15 +553,24 @@ internal sealed class MainForm : Form
             Padding = new Padding(0, 6, 0, 0)
         };
         _txtNewIgnored = new TextBox { Width = 140, PlaceholderText = "Слово / сленг" };
-        var btnAddIgnored = new Button { Text = "+", Width = 42, Height = 28 };
-        btnAddIgnored.Click += (_, _) =>
+        void SubmitIgnored()
         {
             if (!string.IsNullOrWhiteSpace(_txtNewIgnored.Text))
             {
                 _engine.UserDictionary.AddIgnoredWord(_txtNewIgnored.Text);
                 _txtNewIgnored.Clear();
             }
+        }
+        _txtNewIgnored.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                SubmitIgnored();
+            }
         };
+        var btnAddIgnored = new Button { Text = "+", Width = 42, Height = 28 };
+        btnAddIgnored.Click += (_, _) => SubmitIgnored();
         var btnDelIgnored = new Button { Text = "Удалить", Width = 85, Height = 28 };
         btnDelIgnored.Click += (_, _) =>
         {
@@ -565,8 +613,7 @@ internal sealed class MainForm : Form
         };
         _txtSnippetTrigger = new TextBox { Width = 95, PlaceholderText = "Напр.: тг" };
         _txtSnippetReplacement = new TextBox { Width = 165, PlaceholderText = "Напр.: Telegram" };
-        var btnAddSnippet = new Button { Text = "Сохранить", Width = 90, Height = 28 };
-        btnAddSnippet.Click += (_, _) =>
+        void SubmitSnippet()
         {
             if (!string.IsNullOrWhiteSpace(_txtSnippetTrigger.Text) &&
                 !string.IsNullOrEmpty(_txtSnippetReplacement.Text))
@@ -574,8 +621,19 @@ internal sealed class MainForm : Form
                 _engine.UserDictionary.SetCustomReplacement(_txtSnippetTrigger.Text, _txtSnippetReplacement.Text);
                 _txtSnippetTrigger.Clear();
                 _txtSnippetReplacement.Clear();
+                _txtSnippetTrigger.Focus();
+            }
+        }
+        _txtSnippetReplacement.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                e.SuppressKeyPress = true;
+                SubmitSnippet();
             }
         };
+        var btnAddSnippet = new Button { Text = "Сохранить", Width = 90, Height = 28 };
+        btnAddSnippet.Click += (_, _) => SubmitSnippet();
         var btnDelSnippet = new Button { Text = "Удалить", Width = 80, Height = 28 };
         btnDelSnippet.Click += (_, _) =>
         {

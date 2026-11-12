@@ -36,6 +36,41 @@ public static class TokenGuards
         return false;
     }
 
+    /// <summary>
+    /// Detects intentional expressive chat stretches of 3+ identical consecutive letters
+    /// (e.g. "ммм", "дааа", "нееет", "ооочень", "nooo", "hmmm") so they are never "corrected" into dry words.
+    /// Accidental 2-letter double taps ("приввет") return false and are still fixed.
+    /// </summary>
+    public static bool HasExpressiveLetterRepeat(ReadOnlySpan<char> span)
+    {
+        if (span.Length < 3)
+        {
+            return false;
+        }
+
+        int run = 1;
+        char prev = char.ToLowerInvariant(span[0]);
+        for (int i = 1; i < span.Length; i++)
+        {
+            char cur = char.ToLowerInvariant(span[i]);
+            if (cur == prev && char.IsLetter(cur))
+            {
+                run++;
+                if (run >= 3)
+                {
+                    return true;
+                }
+            }
+            else
+            {
+                run = 1;
+                prev = cur;
+            }
+        }
+
+        return false;
+    }
+
     public static bool LooksLikeUrlOrDomain(ReadOnlySpan<char> rawSpan)
     {
         if (rawSpan.StartsWith("http", StringComparison.OrdinalIgnoreCase) ||
@@ -124,8 +159,7 @@ public static class TokenGuards
         if (span.IsEmpty) return false;
         for (int i = 0; i < span.Length; i++)
         {
-            char c = span[i];
-            if (!KeyboardGeometry.IsCyrillicLetter(c) && c != '-')
+            if (!KeyboardGeometry.IsCyrillicLetter(span[i]))
             {
                 return false;
             }
@@ -138,13 +172,59 @@ public static class TokenGuards
         if (span.IsEmpty) return false;
         for (int i = 0; i < span.Length; i++)
         {
-            char c = span[i];
-            if (!KeyboardGeometry.IsLatinLetter(c) && c != '-')
+            if (!KeyboardGeometry.IsLatinLetter(span[i]))
             {
                 return false;
             }
         }
         return true;
+    }
+
+    public static bool IsWellFormedHyphenatedWord(ReadOnlySpan<char> span, out bool isCyrillic, out bool isLatin)
+    {
+        isCyrillic = false;
+        isLatin = false;
+        if (span.Length < 3 || span[0] == '-' || span[^1] == '-')
+        {
+            return false;
+        }
+
+        bool sawHyphen = false;
+        bool prevHyphen = false;
+        bool allCyr = true;
+        bool allLat = true;
+
+        for (int i = 0; i < span.Length; i++)
+        {
+            char c = span[i];
+            if (c == '-')
+            {
+                if (prevHyphen)
+                {
+                    return false;
+                }
+                sawHyphen = true;
+                prevHyphen = true;
+                continue;
+            }
+
+            prevHyphen = false;
+            if (!KeyboardGeometry.IsCyrillicLetter(c)) allCyr = false;
+            if (!KeyboardGeometry.IsLatinLetter(c)) allLat = false;
+            if (!allCyr && !allLat)
+            {
+                return false;
+            }
+        }
+
+        if (!sawHyphen)
+        {
+            return false;
+        }
+
+        isCyrillic = allCyr;
+        isLatin = allLat;
+        return allCyr || allLat;
     }
 
     public static string ApplyCasing(string replacementLower, CasingKind originalCasing, bool forceCapitalize)

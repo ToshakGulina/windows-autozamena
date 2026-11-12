@@ -225,7 +225,52 @@ EXPLICIT_FIXES = {
     "чот": "что",
     "што": "что",
     "привте": "привет",
-    # Unambiguous common English typos
+    # Unambiguous Russian missing-hyphen conversational words
+    "ктото": "кто-то",
+    "чтото": "что-то",
+    "гдето": "где-то",
+    "кудато": "куда-то",
+    "когдато": "когда-то",
+    "почемуто": "почему-то",
+    "зачемто": "зачем-то",
+    "какойто": "какой-то",
+    "какаято": "какая-то",
+    "какоето": "какое-то",
+    "какието": "какие-то",
+    "чейто": "чей-то",
+    "комуто": "кому-то",
+    "кемто": "кем-то",
+    "чемто": "чем-то",
+    "ктонибудь": "кто-нибудь",
+    "чтонибудь": "что-нибудь",
+    "гденибудь": "где-нибудь",
+    "куданибудь": "куда-нибудь",
+    "когданибудь": "когда-нибудь",
+    "какнибудь": "как-нибудь",
+    "какойнибудь": "какой-нибудь",
+    "какаянибудь": "какая-нибудь",
+    "какиенибудь": "какие-нибудь",
+    "комунибудь": "кому-нибудь",
+    "коекто": "кое-кто",
+    "коечто": "кое-что",
+    "коегде": "кое-где",
+    "коекак": "кое-как",
+    "помоему": "по-моему",
+    "потвоему": "по-твоему",
+    "посвоему": "по-своему",
+    "подругому": "по-другому",
+    "поновому": "по-новому",
+    "постарому": "по-старому",
+    "похорошему": "по-хорошему",
+    "порусски": "по-русски",
+    "поанглийски": "по-английски",
+    "вопервых": "во-первых",
+    "вовторых": "во-вторых",
+    "втретьих": "в-третьих",
+    "всетаки": "всё-таки",
+    "изпод": "из-под",
+    "другдруга": "друг друга",
+    # Unambiguous common English typos & contractions
     "teh": "the",
     "taht": "that",
     "adn": "and",
@@ -249,6 +294,18 @@ EXPLICIT_FIXES = {
     "occassion": "occasion",
     "tommorow": "tomorrow",
     "truely": "truly",
+    "dont": "don't",
+    "doesnt": "doesn't",
+    "didnt": "didn't",
+    "isnt": "isn't",
+    "arent": "aren't",
+    "wasnt": "wasn't",
+    "werent": "weren't",
+    "couldnt": "couldn't",
+    "wouldnt": "wouldn't",
+    "shouldnt": "shouldn't",
+    "havent": "haven't",
+    "hasnt": "hasn't",
 }
 
 # Curated high-value Russian lemma bigrams (prev_lemma, next_lemma, boost)
@@ -332,14 +389,80 @@ def write_short_utf8(buf: bytearray, s: str) -> None:
     buf.extend(b)
 
 
+EXTRA_KNOWN_RU_SEEDS = {
+    "автозамена", "тайминг", "хоткей", "телеграм", "дискорд", "фича", "коммит",
+    "созвон", "триггер", "артефакт", "баг", "релиз", "апдейт", "дедлайн",
+    "скриншот", "браузер", "мессенджер", "клавиатура", "раскладка", "песочница",
+    "улучшить", "исправить", "проверить", "настроить", "переключить", "открыть",
+    "добавить", "удалить", "сохранить", "скачать", "запустить", "обновить",
+}
+
+ARCHAIC_OR_BAD_TAGS = {"Arch", "Dist", "Erro", "V-be", "V-ey", "V-oy", "Abbr", "Init", "Infr"}
+EXPANDABLE_POS = {"NOUN", "VERB", "INFN", "ADJS", "PRED", "NPRO"}
+
+LOANWORD_MASC_CONSONANT = {
+    "айпад", "акк", "багфикс", "бафф", "блютуз", "бэк", "бэкенд", "вайб", "вайбер",
+    "ватсап", "войс", "гитлаб", "гитхаб", "дамаг", "дашборд", "девопс", "дейлик",
+    "дискорд", "зум", "ивент", "камбэк", "коммит", "кринж", "кубер", "лут", "макбук",
+    "мерж", "мут", "нерф", "нетфликс", "пайплайн", "прод", "продакшн", "пруф", "пулл",
+    "пуллреквест", "пуш", "реакт", "ребейз", "реддит", "редит", "репост", "респавн",
+    "рефакторинг", "рофл", "раннер", "линтер", "парсер", "докер", "сервак", "скилл",
+    "скрин", "слак", "сниппет", "созвон", "спавн", "стейдж", "стейджинг", "стедап",
+    "стендап", "стим", "стример", "тайминг", "таргет", "таск", "телеграм", "тикток",
+    "тильт", "тиммейт", "токен", "треш", "трэш", "фидбек", "фронтенд", "фуллстек",
+    "хотфикс", "чатик", "шорткат", "ютуб", "инсайт",
+}
+
+LOANWORD_MASC_Y = {"деплой", "спотифай", "хоткей", "вайфай"}
+
+LOANWORD_FEM_A = {"автозамена", "админка", "апишка", "видяха", "винда", "имба", "ульта", "телега", "фича"}
+
+LOANWORD_ADJ_HARD = {"дефолтный", "кастомный", "рандомный"}
+
+
+def expand_protected_words(base_protected: set[str]) -> list[str]:
+    expanded = set(w.lower() for w in base_protected if w)
+    for stem in LOANWORD_MASC_CONSONANT:
+        expanded.add(stem)
+        last = stem[-1]
+        nom_pl = "и" if last in "кгхжшчщ" else "ы"
+        ins_sg = "ем" if last in "жшчщц" else "ом"
+        gen_pl = "ей" if last in "жшчщ" else "ов"
+        for suf in ("а", "у", ins_sg, "е", nom_pl, gen_pl, "ам", "ами", "ах"):
+            expanded.add(stem + suf)
+    for stem in LOANWORD_MASC_Y:
+        root = stem[:-1]
+        expanded.add(stem)
+        for suf in ("я", "ю", "ем", "е", "и", "ев", "ям", "ями", "ях"):
+            expanded.add(root + suf)
+    for word_a in LOANWORD_FEM_A:
+        root = word_a[:-1]
+        last = root[-1]
+        acc_pl = "и" if last in "кгхжшчщ" else "ы"
+        ins_sg = "ей" if last in "жшчщц" else "ой"
+        expanded.add(word_a)
+        for suf in (acc_pl, "е", "у", ins_sg, "", "ам", "ами", "ах"):
+            if suf or len(root) >= 4:
+                expanded.add(root + suf)
+    for adj in LOANWORD_ADJ_HARD:
+        root = adj[:-2]
+        expanded.add(adj)
+        expanded.add(root + "о")  # adverb: дефолтно, кастомно, рандомно
+        for suf in ("ого", "ому", "ым", "ом", "ая", "ой", "ую", "ое", "ые", "ых", "ыми"):
+            expanded.add(root + suf)
+    return sorted(expanded)
+
+
 def build_ru_words(morph: pymorphy3.MorphAnalyzer):
     print("[1/5] Building Russian lexicon from wordfreq + pymorphy3...")
     raw_words = wordfreq.top_n_list("ru", 240_000)
-    entries = {}
+    entries: dict[str, float] = {}
 
     for w in RU_SINGLE_VALID:
         z = wordfreq.zipf_frequency(w, "ru")
         entries[w] = z
+
+    seed_lemmas_to_expand: set[str] = set(EXTRA_KNOWN_RU_SEEDS)
 
     for w in raw_words:
         if len(entries) >= 185_000:
@@ -354,12 +477,52 @@ def build_ru_words(morph: pymorphy3.MorphAnalyzer):
         if z < 1.85:
             continue
         entries[w] = z
+        if z >= 3.30:
+            seed_lemmas_to_expand.add(w)
         # Ensure standard 'е'-spelling of 'ё' words is also recognized as valid
         if "ё" in w:
             w_no_yo = w.replace("ё", "е")
             if w_no_yo not in entries and w_no_yo not in EXPLICIT_FIXES:
                 z_no_yo = max(wordfreq.zipf_frequency(w_no_yo, "ru"), z - 0.15)
                 entries[w_no_yo] = z_no_yo
+
+    for prot_w in PROTECTED_WORDS:
+        if CYR_RE.match(prot_w) and morph.word_is_known(prot_w):
+            seed_lemmas_to_expand.add(prot_w)
+
+    # Expand full clean paradigms (imperatives, noun/pronoun cases, finite verbs) as known valid forms
+    expanded_lemmas_seen: set[str] = set()
+    added_paradigm_forms = 0
+    for seed in seed_lemmas_to_expand:
+        if not morph.word_is_known(seed):
+            continue
+        top_parse = morph.parse(seed)[0]
+        norm = top_parse.normal_form
+        if norm in expanded_lemmas_seen:
+            continue
+        expanded_lemmas_seen.add(norm)
+        if top_parse.tag.POS not in EXPANDABLE_POS:
+            continue
+
+        for form_parse in top_parse.lexeme:
+            tag = form_parse.tag
+            if tag.POS not in EXPANDABLE_POS:
+                continue
+            if tag.grammemes & ARCHAIC_OR_BAD_TAGS:
+                continue
+            fw = form_parse.word.lower()
+            if not CYR_RE.match(fw) or fw in EXPLICIT_FIXES:
+                continue
+            if fw not in entries:
+                # Known valid word (z=2.10 < 2.75 so not an aggressive SymSpell replacement target unless in corpus)
+                entries[fw] = max(2.10, wordfreq.zipf_frequency(fw, "ru"))
+                added_paradigm_forms += 1
+            if "ё" in fw:
+                fw_no_yo = fw.replace("ё", "е")
+                if fw_no_yo not in entries and fw_no_yo not in EXPLICIT_FIXES:
+                    entries[fw_no_yo] = max(2.10, wordfreq.zipf_frequency(fw_no_yo, "ru"))
+
+    print(f"      Added {added_paradigm_forms:,} paradigm inflection forms for known lemmas.")
 
     sorted_words = sorted(entries.keys())
     lemma_to_id: dict[str, int] = {}
@@ -703,7 +866,7 @@ def main() -> None:
         ru_records=ru_records,
         lemma_count=len(ru_lemma_to_id),
         en_records=en_records,
-        protected_words=list(PROTECTED_WORDS),
+        protected_words=expand_protected_words(PROTECTED_WORDS),
         explicit_fixes=EXPLICIT_FIXES,
         ru_lemma_bi=ru_lemma_bi,
         ru_surf_bi=ru_surf_bi,

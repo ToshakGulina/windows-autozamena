@@ -8,6 +8,8 @@ namespace AutoZamena.App;
 
 internal static class Program
 {
+    internal const string ActivateWindowEventName = @"Local\AutoZamena_ActivateWindow_Event";
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -19,12 +21,21 @@ internal static class Program
 
         if (!isFirstInstance)
         {
-            MessageBox.Show(
-                "AutoZamena уже запущена и работает в системном трее (рядом с часами).",
-                "AutoZamena",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information
-            );
+            // Signal the running tray instance to bring its settings window to the front!
+            try
+            {
+                using EventWaitHandle activateSignal = EventWaitHandle.OpenExisting(ActivateWindowEventName);
+                activateSignal.Set();
+            }
+            catch
+            {
+                MessageBox.Show(
+                    "AutoZamena уже запущена и работает в системном трее (рядом с часами).",
+                    "AutoZamena",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information
+                );
+            }
             return;
         }
 
@@ -36,7 +47,13 @@ internal static class Program
             string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "-m", StringComparison.OrdinalIgnoreCase));
 
-        using var context = new TrayApplicationContext(startMinimized);
+        using var activateEvent = new EventWaitHandle(
+            initialState: false,
+            mode: EventResetMode.AutoReset,
+            name: ActivateWindowEventName
+        );
+
+        using var context = new TrayApplicationContext(startMinimized, activateEvent);
         Application.Run(context);
     }
 }
