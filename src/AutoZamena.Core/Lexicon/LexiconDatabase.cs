@@ -97,10 +97,16 @@ public sealed class LexiconDatabase
     public static LexiconDatabase LoadFromEmbeddedResource()
     {
         Assembly asm = typeof(LexiconDatabase).Assembly;
-        using Stream? rawStream = asm.GetManifestResourceStream(EmbeddedResourceName);
+        string resourceName = asm.GetManifestResourceNames()
+            .FirstOrDefault(n => n.EndsWith("lexicon.bin.gz", StringComparison.OrdinalIgnoreCase))
+            ?? EmbeddedResourceName;
+
+        using Stream? rawStream = asm.GetManifestResourceStream(resourceName);
         if (rawStream is null)
         {
-            throw new InvalidOperationException($"Embedded lexicon resource '{EmbeddedResourceName}' was not found.");
+            string available = string.Join(", ", asm.GetManifestResourceNames());
+            throw new InvalidOperationException(
+                $"Embedded lexicon resource '{resourceName}' was not found. Available: [{available}]");
         }
 
         using var gzip = new GZipStream(rawStream, CompressionMode.Decompress);
