@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Data\lexicon.bin.gz">
-      <LogicalName>AutoZamena.Core.Data.lexicon.bin.gz</LogicalName>
+    <EmbeddedResource Include="Data\lexicon_data.gz" WithCulture="false">
+      <LogicalName>AutoZamena.Core.Data.lexicon_data.gz</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

@@ -36,7 +36,7 @@ public readonly record struct EnWordEntry(
 /// </summary>
 public sealed class LexiconDatabase
 {
-    public const string EmbeddedResourceName = "AutoZamena.Core.Data.lexicon.bin.gz";
+    public const string EmbeddedResourceName = "AutoZamena.Core.Data.lexicon_data.gz";
 
     private static readonly Lazy<LexiconDatabase> DefaultInstance =
         new(LoadFromEmbeddedResource, LazyThreadSafetyMode.ExecutionAndPublication);
@@ -98,7 +98,7 @@ public sealed class LexiconDatabase
     {
         Assembly asm = typeof(LexiconDatabase).Assembly;
         string resourceName = asm.GetManifestResourceNames()
-            .FirstOrDefault(n => n.EndsWith("lexicon.bin.gz", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault(n => n.EndsWith("lexicon_data.gz", StringComparison.OrdinalIgnoreCase))
             ?? EmbeddedResourceName;
 
         using Stream? rawStream = asm.GetManifestResourceStream(resourceName);

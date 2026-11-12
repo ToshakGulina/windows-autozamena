@@ -682,7 +682,7 @@ def serialize_lexicon(
 def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     ud_root = Path(os.environ.get("UD_CACHE_DIR", "/tmp/ud_cache"))
-    out_path = repo_root / "src" / "AutoZamena.Core" / "Data" / "lexicon.bin.gz"
+    out_path = repo_root / "src" / "AutoZamena.Core" / "Data" / "lexicon_data.gz"
 
     if not ud_root.exists():
         print(f"Warning: {ud_root} not found; corpus bigrams will only include curated pairs.", file=sys.stderr)

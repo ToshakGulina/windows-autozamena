@@ -80,7 +80,7 @@ dotnet publish src/AutoZamena.App/AutoZamena.App.csproj `
   -o publish
 ```
 
-Для пересборки встроенного бинарного словаря `src/AutoZamena.Core/Data/lexicon.bin.gz` из корпусов:
+Для пересборки встроенного бинарного словаря `src/AutoZamena.Core/Data/lexicon_data.gz` из корпусов:
 
 ```bash
 pip install wordfreq pymorphy3 pymorphy3-dicts-ru pyspellchecker
