@@ -23,6 +23,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly LowLevelInputHook _hook;
 
     private readonly Icon _iconActive;
+    private readonly Icon _iconStandby;
     private readonly Icon _iconPaused;
     private readonly NotifyIcon _trayIcon;
     private readonly ToolStripMenuItem _miTogglePause;
@@ -30,6 +31,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly MainForm _mainForm;
     private readonly RegisteredWaitHandle? _activateWaitRegistration;
 
+    private ContextStatus _currentContextStatus = ContextStatus.Allowed;
     private string _lastExternalProcess = string.Empty;
 
     public TrayApplicationContext(bool startMinimized, EventWaitHandle? activateSignal = null)
@@ -40,7 +42,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _config = AppConfig.Load();
 
         var userDict = new UserDictionary();
-        userDict.LoadFrom(_config.IgnoredWords, _config.CustomReplacements);
+        userDict.Load(_config.IgnoredWords, _config.CustomReplacements);
 
         _engine = new AutoCorrectEngine(
             lexicon: LexiconDatabase.Default,
@@ -51,8 +53,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _contextGuard = new WindowContextGuard();
         _hook = new LowLevelInputHook(_engine, _contextGuard, _config);
 
-        _iconActive = TrayIconGenerator.CreateStatusIcon(enabled: true);
-        _iconPaused = TrayIconGenerator.CreateStatusIcon(enabled: false);
+        _iconActive = TrayIconGenerator.CreateIcon(TrayVisualState.Active);
+        _iconStandby = TrayIconGenerator.CreateIcon(TrayVisualState.StandbyFilteredApp);
+        _iconPaused = TrayIconGenerator.CreateIcon(TrayVisualState.Paused);
 
         _mainForm = new MainForm(
             _config,
@@ -187,18 +190,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnContextStatusChanged(ContextStatus status, string procName)
     {
-        if (string.IsNullOrWhiteSpace(procName) ||
-            string.Equals(procName, "AutoZamena", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(procName, "explorer", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
         _uiSyncContext.Post(_ =>
         {
-            _lastExternalProcess = procName;
-            _miExcludeLastApp.Enabled = true;
-            _miExcludeLastApp.Text = $"Добавить «{procName}» в чёрный список";
+            _currentContextStatus = status;
+            RefreshTrayVisuals();
+
+            if (!string.IsNullOrWhiteSpace(procName) &&
+                !string.Equals(procName, "AutoZamena", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(procName, "explorer", StringComparison.OrdinalIgnoreCase))
+            {
+                _lastExternalProcess = procName;
+                _miExcludeLastApp.Enabled = true;
+                _miExcludeLastApp.Text = $"Добавить «{procName}» в чёрный список";
+            }
         }, null);
     }
 
@@ -233,14 +237,32 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private void RefreshTrayVisuals()
     {
         bool active = _config.Engine.Enabled;
-        _trayIcon.Icon = active ? _iconActive : _iconPaused;
-        string stateStr = active ? "Активна" : "На паузе";
         string hk = _config.PauseToggleHotkey.ToDisplayString();
-        string tip = $"AutoZamena — {stateStr} ({hk})";
-        _trayIcon.Text = tip.Length <= 63 ? tip : tip[..63];
         _miTogglePause.Text = active
             ? $"Поставить на паузу ({hk})"
             : $"Включить автозамену ({hk})";
+
+        if (!active)
+        {
+            _trayIcon.Icon = _iconPaused;
+            SetSafeTrayTooltip($"AutoZamena — На паузе ({hk})");
+            return;
+        }
+
+        if (_currentContextStatus is ContextStatus.FilteredApp or ContextStatus.FullscreenGame or ContextStatus.PasswordField)
+        {
+            _trayIcon.Icon = _iconStandby;
+            SetSafeTrayTooltip("AutoZamena — Отключена для текущего окна");
+            return;
+        }
+
+        _trayIcon.Icon = _iconActive;
+        SetSafeTrayTooltip($"AutoZamena — Активна ({hk})");
+    }
+
+    private void SetSafeTrayTooltip(string tip)
+    {
+        _trayIcon.Text = tip.Length <= 63 ? tip : tip[..63];
     }
 
     private void ExitCleanly()
@@ -262,6 +284,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
             _iconActive.Dispose();
+            _iconStandby.Dispose();
             _iconPaused.Dispose();
             _mainForm.Dispose();
         }

@@ -388,11 +388,11 @@ public sealed class LowLevelInputHook : IDisposable
     {
         CorrectionApplied?.Invoke(new CorrectionHistoryEntry(
             Timestamp: DateTime.Now,
-            OriginalText: res.OriginalToken,
-            ReplacementText: res.Kind == CorrectionKind.UndoRestore ? res.AppendText : res.ReplacementText,
             Kind: res.Kind,
-            Reason: res.Reason,
+            OriginalText: res.OriginalText,
+            ReplacementText: res.Kind == CorrectionKind.UndoRestore ? res.AppendText : res.ReplacementText,
             ProcessName: procName,
+            Reason: res.Reason,
             WasUndone: res.Kind == CorrectionKind.UndoRestore
         ));
     }
