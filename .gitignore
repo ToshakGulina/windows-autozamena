@@ -1,0 +1,22 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+publish/
+artifacts/
+TestResults/
+
+# IDE / Editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Temp / Python env
+.venv/
+__pycache__/
+*.pyc
+ud_cache/

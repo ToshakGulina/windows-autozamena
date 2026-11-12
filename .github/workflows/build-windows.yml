@@ -1,0 +1,87 @@
+name: Build & Test Windows App
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    tags:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    name: Windows (.NET 8) Build, Test & Package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore AutoZamena.sln
+
+      - name: Build solution (Release)
+        run: dotnet build AutoZamena.sln -c Release --no-restore
+
+      - name: Run xUnit tests & latency benchmarks
+        run: dotnet test tests/AutoZamena.Tests/AutoZamena.Tests.csproj -c Release --no-build --verbosity normal
+
+      - name: Publish Standalone Single-File .exe (no .NET install required)
+        run: >
+          dotnet publish src/AutoZamena.App/AutoZamena.App.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          -o publish/standalone
+
+      - name: Publish Lightweight Single-File .exe (.NET 8 Desktop Runtime)
+        run: >
+          dotnet publish src/AutoZamena.App/AutoZamena.App.csproj
+          -c Release
+          -r win-x64
+          --self-contained false
+          -p:PublishSingleFile=true
+          -p:DebugType=none
+          -p:DebugSymbols=false
+          -o publish/light
+
+      - name: Upload Standalone AutoZamena.exe Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoZamena-win-x64-standalone
+          path: publish/standalone/AutoZamena.exe
+          if-no-files-found: error
+
+      - name: Upload Lightweight AutoZamena.exe Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoZamena-win-x64-light
+          path: publish/light/AutoZamena.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release on version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Copy-Item publish/standalone/AutoZamena.exe AutoZamena-win-x64-standalone.exe
+          Copy-Item publish/light/AutoZamena.exe AutoZamena-win-x64-light.exe
+          gh release create "${{ github.ref_name }}" `
+            AutoZamena-win-x64-standalone.exe `
+            AutoZamena-win-x64-light.exe `
+            --generate-notes

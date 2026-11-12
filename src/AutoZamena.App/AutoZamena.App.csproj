@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>AutoZamena</AssemblyName>
+    <RootNamespace>AutoZamena.App</RootNamespace>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Version>1.0.0</Version>
+    <Product>AutoZamena — Умная автозамена для Windows</Product>
+    <Description>Мгновенное исправление опечаток на ПК по геометрии клавиш, таймингам и контексту</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AutoZamena.Core\AutoZamena.Core.csproj" />
+    <InternalsVisibleTo Include="AutoZamena.Tests" />
+  </ItemGroup>
+
+</Project>
