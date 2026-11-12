@@ -55,6 +55,12 @@ public static class NoisyChannelScorer
                 continue;
             }
 
+            // Never truncate a 3-letter token (e.g. abbreviation "сво", "кпд", "мгу") into a 2-letter preposition
+            if (len == 3 && entry.Word.Length < 3)
+            {
+                continue;
+            }
+
             // Do not merely force 'ё' onto valid 'е' words; handled upstream by IsKnownRuWord
             float editCost = ComputePhysicalEditCost(typedLower, entry.Word, keystrokes, maxEditCost);
             if (editCost > maxEditCost)
@@ -138,6 +144,11 @@ public static class NoisyChannelScorer
         {
             EnWordEntry entry = lexicon.GetEnEntryByIndex(candidateIndices[idx]);
             if (string.Equals(entry.Word, typedLower, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (len == 3 && entry.Word.Length < 3)
             {
                 continue;
             }

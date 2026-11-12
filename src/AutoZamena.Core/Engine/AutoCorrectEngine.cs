@@ -13,7 +13,7 @@ public sealed class AutoCorrectEngine
 {
     private static readonly HashSet<char> RuNonStandaloneConsonants = new()
     {
-        'б', 'г', 'д', 'ж', 'з', 'й', 'л', 'м', 'н', 'п', 'р', 'т', 'ф', 'х', 'ц', 'ч', 'ш', 'щ', 'ъ', 'ы', 'ь', 'э', 'ю'
+        'г', 'д', 'з', 'й', 'л', 'м', 'н', 'п', 'р', 'т', 'ф', 'х', 'ц', 'ч', 'ш', 'щ', 'ъ', 'ы', 'ь', 'э', 'ю'
     };
 
     private static readonly HashSet<char> EnNonStandaloneLetters = new()
@@ -58,6 +58,7 @@ public sealed class AutoCorrectEngine
 
     private readonly record struct PendingBrokenStub(
         string RawToken,
+        string CommittedOnScreen,
         CasingKind Casing,
         char DelimiterUsed,
         long TimestampMs
@@ -317,14 +318,15 @@ public sealed class AutoCorrectEngine
             }
         }
 
-        // Case 2: User already pressed Space after an unfixed token (e.g. "ghbdtn ")
+        // Case 2: User already pressed Space after a token (e.g. "ghbdtn ")
         if (_prevUnfixedStub.HasValue && _prevUnfixedStub.Value.DelimiterUsed == ' ')
         {
             string raw = _prevUnfixedStub.Value.RawToken;
+            string currentScreenWord = _prevUnfixedStub.Value.CommittedOnScreen;
             (string converted, TargetLanguage targetLang) = ConvertTokenOppositeLayout(raw);
             if (converted != raw && targetLang != TargetLanguage.None)
             {
-                string onScreen = raw + " ";
+                string onScreen = currentScreenWord + " ";
                 string desired = converted + " ";
                 _prevUnfixedStub = null;
                 UpdatePreviousLanguageContext(converted);
@@ -487,7 +489,7 @@ public sealed class AutoCorrectEngine
         {
             _afterSentenceEndPunct = false;
             _hasTypedAnyWordInContext = true;
-            _prevUnfixedStub = new PendingBrokenStub(rawSpan, CasingKind.Lower, delimiter, timestampMs);
+            _prevUnfixedStub = new PendingBrokenStub(rawSpan, rawSpan, CasingKind.Lower, delimiter, timestampMs);
             return CorrectionResult.NoChange;
         }
 
@@ -507,6 +509,7 @@ public sealed class AutoCorrectEngine
                     (RuNonStandaloneConsonants.Contains(singleLower) || EnNonStandaloneLetters.Contains(singleLower)))
                 {
                     _lastTailAddition = null;
+                    _prevUnfixedStub = null;
                     // Erase the stray single letter, swallow the new Space -> screen stays "назад "
                     return new CorrectionResult(
                         CorrectionKind.SpacebarRolloverDropLateTail,
@@ -522,6 +525,7 @@ public sealed class AutoCorrectEngine
             }
 
             // 3b. Merge broken stub + stray single trailing consonant ("приве т" -> "привет", "делае т" -> "делает")
+            // Works even if the broken stub ("делае") had just been replaced on screen with "дела"!
             if (_prevUnfixedStub.HasValue && _prevUnfixedStub.Value.DelimiterUsed == ' ')
             {
                 PendingBrokenStub stub = _prevUnfixedStub.Value;
@@ -537,14 +541,15 @@ public sealed class AutoCorrectEngine
                     if (validMerged)
                     {
                         string desiredMerged = TokenGuards.ApplyCasing(mergedLower, stub.Casing, forceCapitalize: false);
-                        string onScreenTwoTokens = stub.RawToken + " " + wordToken;
+                        string onScreenTwoTokens = stub.CommittedOnScreen + " " + wordToken;
+                        string rawTypedTwoTokens = stub.RawToken + " " + wordToken;
                         _prevUnfixedStub = null;
                         _lastTailAddition = null;
                         UpdatePreviousLanguageContext(desiredMerged);
 
                         var mergeRes = CorrectionResult.FromDiff(
                             CorrectionKind.SpacebarRolloverMerge,
-                            onScreenTwoTokens,
+                            rawTypedTwoTokens,
                             onScreenTwoTokens,
                             desiredMerged,
                             delimiter,
@@ -555,7 +560,7 @@ public sealed class AutoCorrectEngine
 
                         _undoSnapshot = new UndoSnapshot(
                             string.Empty,
-                            onScreenTwoTokens,
+                            rawTypedTwoTokens,
                             desiredMerged + delimiter,
                             TargetLanguage.None,
                             savedPrevRu,
@@ -769,7 +774,7 @@ public sealed class AutoCorrectEngine
                         );
                     }
 
-                    return CommitCorrection(
+                    CorrectionResult ruFix = CommitCorrection(
                         CorrectionKind.Typo,
                         wordToken,
                         wordToken,
@@ -781,6 +786,8 @@ public sealed class AutoCorrectEngine
                         bestRu.Value.Score,
                         reason
                     );
+                    _prevUnfixedStub = new PendingBrokenStub(wordToken, finalWord, casing, delimiter, timestampMs);
+                    return ruFix;
                 }
             }
             else if (isPureEn)
@@ -812,7 +819,7 @@ public sealed class AutoCorrectEngine
                         );
                     }
 
-                    return CommitCorrection(
+                    CorrectionResult enFix = CommitCorrection(
                         CorrectionKind.Typo,
                         wordToken,
                         wordToken,
@@ -824,6 +831,8 @@ public sealed class AutoCorrectEngine
                         bestEn.Value.Score,
                         reason
                     );
+                    _prevUnfixedStub = new PendingBrokenStub(wordToken, finalWord, casing, delimiter, timestampMs);
+                    return enFix;
                 }
             }
         }
@@ -831,7 +840,7 @@ public sealed class AutoCorrectEngine
         // Word was left untouched (e.g. unknown slang, name, or incomplete broken stub like "приве")
         _afterSentenceEndPunct = false;
         _hasTypedAnyWordInContext = true;
-        _prevUnfixedStub = new PendingBrokenStub(wordToken, casing, delimiter, timestampMs);
+        _prevUnfixedStub = new PendingBrokenStub(wordToken, wordToken, casing, delimiter, timestampMs);
         _prevRuWord = null;
         _prevEnWord = null;
         return CorrectionResult.NoChange;
