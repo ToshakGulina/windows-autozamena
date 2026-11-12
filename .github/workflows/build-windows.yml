@@ -34,7 +34,18 @@ jobs:
         run: dotnet build AutoZamena.sln -c Release --no-restore
 
       - name: Run xUnit tests & latency benchmarks
-        run: dotnet test tests/AutoZamena.Tests/AutoZamena.Tests.csproj -c Release --no-build --verbosity normal
+        shell: pwsh
+        run: |
+          $output = dotnet test tests/AutoZamena.Tests/AutoZamena.Tests.csproj -c Release --no-build --verbosity normal 2>&1 | Out-String
+          Write-Host $output
+          if ($LASTEXITCODE -ne 0) {
+            $lines = ($output -split "`r?`n" | Where-Object { $_ -match "Failed|Expected:|Actual:|Assert|Exception|\[\s*FAIL\s*\]" }) -join " | "
+            if ([string]::IsNullOrWhiteSpace($lines)) {
+              $lines = ($output -split "`r?`n" | Select-Object -Last 25) -join " | "
+            }
+            Write-Output "::error title=xUnit Test Failure::$lines"
+            exit 1
+          }
 
       - name: Publish Standalone Single-File .exe (no .NET install required)
         run: >

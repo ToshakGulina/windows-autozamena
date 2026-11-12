@@ -38,6 +38,8 @@ public sealed class AutoCorrectEngine
 
     private bool _afterSentenceEndPunct;
     private bool _sawSentencePunctWithoutSpace;
+    private bool _afterDotOrColonWithoutSpace;
+    private bool _inCompoundToken;
     private bool _hasTypedAnyWordInContext;
 
     public EngineSettings Settings { get; set; }
@@ -88,6 +90,8 @@ public sealed class AutoCorrectEngine
         _undoSnapshot = null;
         _afterSentenceEndPunct = false;
         _sawSentencePunctWithoutSpace = false;
+        _afterDotOrColonWithoutSpace = false;
+        _inCompoundToken = false;
         _hasTypedAnyWordInContext = false;
     }
 
@@ -130,6 +134,7 @@ public sealed class AutoCorrectEngine
             _rawSinceWhitespace.Clear();
             _prevUnfixedStub = null;
             _lastTailAddition = null;
+            _afterDotOrColonWithoutSpace = c is '.' or ':';
 
             if (c is '.' or '!' or '?')
             {
@@ -145,6 +150,14 @@ public sealed class AutoCorrectEngine
             return punctRes;
         }
 
+        // Any character typed immediately after '.' or ':' with NO space (e.g. site.org, AutoZamena.exe, https://)
+        // marks the token as a compound technical identifier until whitespace!
+        if (_afterDotOrColonWithoutSpace)
+        {
+            _inCompoundToken = true;
+            _afterDotOrColonWithoutSpace = false;
+        }
+
         _sawSentencePunctWithoutSpace = false;
         _rawSinceWhitespace.Add(ev);
 
@@ -158,6 +171,7 @@ public sealed class AutoCorrectEngine
             if (!KeyboardGeometry.IsEnKeyForRuLetter(c))
             {
                 _wordEvents.Clear();
+                _inCompoundToken = true;
             }
         }
 
@@ -170,11 +184,13 @@ public sealed class AutoCorrectEngine
     public CorrectionResult OnWhitespace(char whitespaceChar = ' ', long timestampMs = 0)
     {
         _undoSnapshot = null;
+        _afterDotOrColonWithoutSpace = false;
 
         if (_sawSentencePunctWithoutSpace && _rawSinceWhitespace.Count == 0)
         {
             _afterSentenceEndPunct = true;
             _sawSentencePunctWithoutSpace = false;
+            _inCompoundToken = false;
             return CorrectionResult.NoChange;
         }
 
@@ -186,6 +202,7 @@ public sealed class AutoCorrectEngine
             allowWrongLayoutRaw: whitespaceChar == ' '
         );
 
+        _inCompoundToken = false;
         _wordEvents.Clear();
         _rawSinceWhitespace.Clear();
         return res;
@@ -433,9 +450,10 @@ public sealed class AutoCorrectEngine
             );
         }
 
-        // Check URL / code / numbers / symbols guard on rawSpan BEFORE anything else,
+        // Check URL / code / numbers / symbols / mid-dot compound guard on rawSpan BEFORE anything else,
         // EXCEPT when rawSpan is an EN-layout Russian word (e.g. "k.,k." or ";bpym")!
-        if (TokenGuards.ContainsDisqualifyingSymbolOrDigit(rawSpan) ||
+        if (_inCompoundToken ||
+            TokenGuards.ContainsDisqualifyingSymbolOrDigit(rawSpan) ||
             TokenGuards.LooksLikeUrlOrDomain(rawSpan))
         {
             _afterSentenceEndPunct = false;
