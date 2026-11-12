@@ -25,7 +25,6 @@ internal sealed class MainForm : Form
     private Label _lblStatusTitle = null!;
     private Label _lblStatusSub = null!;
     private Button _btnToggleEnabled = null!;
-    private SplitContainer? _dictionarySplit;
     private bool _dictionarySplitInitialized;
 
     // Tab 1: General & Mechanics
@@ -522,7 +521,6 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical
         };
-        _dictionarySplit = split;
         split.SizeChanged += (_, _) =>
         {
             if (!_dictionarySplitInitialized && split.ClientSize.Width > 420)
