@@ -2040,7 +2040,11 @@ public sealed class AutoCorrectEngine
         }
 
         string rawLower = rawSpan.ToLowerInvariant();
-        if (_lexicon.IsProtectedWord(rawLower))
+        bool hasEnContextOrChain =
+            savedPrevEn is not null ||
+            (_recentSpaceTokens.Count > 0 && CanChainShortRuTokenToEn(_recentSpaceTokens[^1]));
+
+        if (_lexicon.IsProtectedWord(rawLower) && !(hasEnContextOrChain && rawLower == "афк"))
         {
             return null;
         }
@@ -2073,10 +2077,6 @@ public sealed class AutoCorrectEngine
         // Fast-path: check if mapped EN candidate exists FIRST (O(1) dictionary lookup) before running RU typo scorer
         if (rawSpan.Length >= 3 && TokenGuards.IsPureCyrillicWord(rawSpan) && !_lexicon.IsKnownRuWord(rawLower))
         {
-            bool hasEnContextOrChain =
-                savedPrevEn is not null ||
-                (_recentSpaceTokens.Count > 0 && CanChainShortRuTokenToEn(_recentSpaceTokens[^1]));
-
             string? resolvedEnWord = TryResolveRuTypedEnglishWord(
                 rawSpan,
                 shouldCapSentence,
