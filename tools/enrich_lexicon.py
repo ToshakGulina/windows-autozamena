@@ -316,7 +316,7 @@ def main() -> None:
         en_map.pop(bad, None)
 
     # Protect ambiguous 3-letter tech/country codes from EN->RU false layout switching
-    prot_set.update({"cif", "lng", "сво", "кпд", "мгу", "ввп", "нло", "дтп", "жкх", "зож", "сми", "вуз"})
+    prot_set.update({"cif", "lng", "кпд", "мгу", "ввп", "нло", "дтп", "жкх", "зож", "сми", "вуз"})
 
     # Re-sort and serialize AZLX v1
     sorted_ru = sorted(ru_map.keys())

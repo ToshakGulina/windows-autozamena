@@ -17,7 +17,7 @@ public sealed class RunTogetherSplittingTests
     [InlineData("нехочу ", "не хочу ")]
     [InlineData("немогу ", "не могу ")]
     [InlineData("ненадо ", "не надо ")]
-    [InlineData("ненужно ", "не нужно ")]
+    [InlineData("неможет ", "не может ")]
     [InlineData("неочень ", "не очень ")]
     [InlineData("уменя ", "у меня ")]
     [InlineData("утебя ", "у тебя ")]

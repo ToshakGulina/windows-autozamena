@@ -1969,7 +1969,7 @@ public sealed class AutoCorrectEngine
                             coreEnSpan.Length >= 5 && TokenGuards.IsPureCyrillicWord(mappedRuLower))
                         {
                             SplitCandidate? ruSplit = RunTogetherSplitter.TrySplitRussian(_lexicon, mappedRuLower, _prevRuWord);
-                            if (ruSplit.HasValue && ruSplit.Value.HasBigram && ruSplit.Value.Score >= 4.20f)
+                            if (ruSplit.HasValue && ((ruSplit.Value.HasBigram && ruSplit.Value.Score >= 4.20f) || ruSplit.Value.Score >= 4.85f))
                             {
                                 resolvedRuLower = ruSplit.Value.Text;
                                 resolvedConfidence = ruSplit.Value.Score;
@@ -2168,7 +2168,7 @@ public sealed class AutoCorrectEngine
         if (Settings.SplitRunTogetherWords && cyrSpan.Length >= 6 && TokenGuards.IsPureLatinWord(mappedEnLower))
         {
             SplitCandidate? enSplit = RunTogetherSplitter.TrySplitEnglish(_lexicon, mappedEnLower, _prevEnWord);
-            if (enSplit.HasValue && enSplit.Value.HasBigram && enSplit.Value.Score >= 4.40f)
+            if (enSplit.HasValue && ((enSplit.Value.HasBigram && enSplit.Value.Score >= 4.40f) || enSplit.Value.Score >= 5.00f))
             {
                 return TokenGuards.ApplyCasing(enSplit.Value.Text, mappedCasing, shouldCapSentence);
             }
