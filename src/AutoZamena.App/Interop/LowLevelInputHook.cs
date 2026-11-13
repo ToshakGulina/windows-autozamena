@@ -34,6 +34,7 @@ public sealed class LowLevelInputHook : IDisposable
 
     private long _lastKeyDownTick;
     private int _heldPrintableKeysCount;
+    private IntPtr _lastTypingHkl;
     private ContextStatus _lastReportedStatus = ContextStatus.Allowed;
     private string _lastReportedProc = string.Empty;
 
@@ -240,6 +241,7 @@ public sealed class LowLevelInputHook : IDisposable
         (ContextStatus status, string procName, bool focusChanged) = _contextGuard.Evaluate(cfg);
         if (focusChanged)
         {
+            _lastTypingHkl = IntPtr.Zero;
             lock (_engineLock)
             {
                 _engine.ResetContext();
@@ -408,7 +410,7 @@ public sealed class LowLevelInputHook : IDisposable
         }
 
         // 10. Translate printable character using active window's keyboard layout (HKL)
-        char? translated = TryTranslateKeyToChar(kb.vkCode, kb.scanCode, shift, isAltGr);
+        char? translated = TryTranslateKeyToChar(kb.vkCode, kb.scanCode, shift, isAltGr, nowMs);
         if (!translated.HasValue)
         {
             return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
@@ -485,6 +487,7 @@ public sealed class LowLevelInputHook : IDisposable
 
         if (gesture == ModifierGesture.DoubleShift && cfg.Engine.LayoutMode != LayoutSwitchMode.Off)
         {
+            bool fallbackToggle = !cfg.UseSingleShiftLayoutSwitch;
             bool hasLiveToken = false;
             if (status == ContextStatus.Allowed)
             {
@@ -511,13 +514,13 @@ public sealed class LowLevelInputHook : IDisposable
                     }
                     else
                     {
-                        TriggerSelectionTransform(SelectionTransformKind.ConvertLayout, procName, toggleLayoutIfNoSelection: true);
+                        TriggerSelectionTransform(SelectionTransformKind.ConvertLayout, procName, toggleLayoutIfNoSelection: fallbackToggle);
                     }
                 });
             }
             else
             {
-                TriggerSelectionTransform(SelectionTransformKind.ConvertLayout, procName, toggleLayoutIfNoSelection: true);
+                TriggerSelectionTransform(SelectionTransformKind.ConvertLayout, procName, toggleLayoutIfNoSelection: fallbackToggle);
             }
         }
     }
@@ -552,7 +555,7 @@ public sealed class LowLevelInputHook : IDisposable
         });
     }
 
-    private char? TryTranslateKeyToChar(uint vkCode, uint scanCode, bool shift, bool isAltGr)
+    private char? TryTranslateKeyToChar(uint vkCode, uint scanCode, bool shift, bool isAltGr, long nowMs)
     {
         Array.Clear(_keyStateBuf, 0, _keyStateBuf.Length);
         if (shift)
@@ -573,6 +576,18 @@ public sealed class LowLevelInputHook : IDisposable
         }
 
         (_, _, IntPtr hkl, _) = NativeMethods.GetActiveFocusAndLayout();
+        if (hkl != IntPtr.Zero)
+        {
+            if (_lastTypingHkl != IntPtr.Zero && hkl != _lastTypingHkl && !AtomicTextInjector.WasRecentAutoLayoutSwitch(nowMs))
+            {
+                lock (_engineLock)
+                {
+                    _engine.NotifyManualLayoutSwitch();
+                }
+            }
+            _lastTypingHkl = hkl;
+        }
+
         _unicodeBuf.Clear();
 
         // Flag 0x04 (Windows 10 1607+): do not change keyboard dead-key state inside hook.

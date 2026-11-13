@@ -269,5 +269,30 @@ public sealed class MechanicsAndLayoutTests
         engine.ResetContext();
         Assert.Equal("привет\r", engine.SimulateText("ghbdtn\r"));
         Assert.Equal("привет\n", engine.SimulateText("привте\n"));
+
+        // 6. Backspace AFTER Enter must NOT replay UndoRestore into an already-submitted/empty chat input
+        engine.ResetContext();
+        foreach (char c in "ghbdtn\r")
+        {
+            engine.OnCharacter(new KeyStrokeEvent(c));
+        }
+        CorrectionResult backspaceAfterEnter = engine.OnBackspace();
+        Assert.False(backspaceAfterEnter.HasChange);
+
+        // 7. Plain Enter ('\r') never appends a guessed tail letter onto an inline-autocomplete prefix ("наза\r"),
+        //    whereas Space ("наза ") still completes "назад ".
+        engine.ResetContext();
+        Assert.Equal("наза\r", engine.SimulateText("наза\r"));
+        engine.ResetContext();
+        Assert.Equal("назад ", engine.SimulateText("наза "));
+
+        // 8. Manual OS layout switch clears pre-switch partial keystrokes and cross-language context bias
+        engine.ResetContext();
+        foreach (char c in "ghb")
+        {
+            engine.OnCharacter(new KeyStrokeEvent(c));
+        }
+        engine.NotifyManualLayoutSwitch();
+        Assert.Equal("вет ", engine.SimulateText("вет "));
     }
 }

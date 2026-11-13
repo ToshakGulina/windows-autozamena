@@ -95,7 +95,10 @@ public sealed class AutoCorrectEngine
     /// True when the engine currently tracks a just-typed word/token on screen that can be converted
     /// immediately without inspecting clipboard selection.
     /// </summary>
-    public bool HasLiveConvertibleToken => _rawSinceWhitespace.Count > 0 || _lastCompletedForHotkey.HasValue;
+    public bool HasLiveConvertibleToken =>
+        _rawSinceWhitespace.Count > 0 ||
+        _lastCompletedForHotkey.HasValue ||
+        (_undoSnapshot.HasValue && _undoSnapshot.Value.Kind == CorrectionKind.WrongLayout);
 
     /// <summary>
     /// Called when the user jumps the caret via navigation keys or explicit focus reset.
@@ -105,6 +108,25 @@ public sealed class AutoCorrectEngine
     {
         ResetContext();
         _suppressFragmentCorrectionUntilDelimiter = suppressFragmentUntilDelimiter;
+    }
+
+    /// <summary>
+    /// Called when the user manually switches the OS keyboard layout (Alt+Shift, Ctrl+Shift, Win+Space, taskbar).
+    /// Clears cross-language context bias and any partial pre-switch keystrokes so the newly chosen layout is respected.
+    /// </summary>
+    public void NotifyManualLayoutSwitch()
+    {
+        _wordEvents.Clear();
+        _rawSinceWhitespace.Clear();
+        _recentSpaceTokens.Clear();
+        _prevRuWord = null;
+        _prevEnWord = null;
+        _prevUnfixedStub = null;
+        _lastTailAddition = null;
+        _lastCompletedForHotkey = null;
+        _undoSnapshot = null;
+        _inCompoundToken = false;
+        _canDoubleSpacePeriod = false;
     }
 
     /// <summary>
@@ -208,9 +230,7 @@ public sealed class AutoCorrectEngine
         if (c == '\r' || c == '\n')
         {
             CorrectionResult res = EvaluateCurrentBufferOnDelimiter(c, ev.TimestampMs, allowWrongLayoutRaw: true);
-            UndoSnapshot? savedUndo = res.HasChange ? _undoSnapshot : null;
             ResetContext();
-            _undoSnapshot = savedUndo;
             return res;
         }
 
@@ -1439,6 +1459,14 @@ public sealed class AutoCorrectEngine
                         isMidSentenceCap)
                     : null;
 
+                // Never append a guessed trailing character on plain Enter ('\r'): protects browser omnibox / dropdown inline autocomplete
+                if (delimiter == '\r' && bestRu.HasValue &&
+                    bestRu.Value.Word.Length == lower.Length + 1 &&
+                    bestRu.Value.Word.StartsWith(lower, StringComparison.Ordinal))
+                {
+                    bestRu = null;
+                }
+
                 bool skipRuSplit = bestRu.HasValue && bestRu.Value.EditCost <= 0.50f &&
                                    !lower.EndsWith("нибудь", StringComparison.Ordinal) &&
                                    !lower.EndsWith("либо", StringComparison.Ordinal) &&
@@ -1530,6 +1558,13 @@ public sealed class AutoCorrectEngine
                         Settings.Sensitivity,
                         isMidSentenceCapitalized: isMidSentenceCap)
                     : null;
+
+                if (delimiter == '\r' && bestEn.HasValue &&
+                    bestEn.Value.Word.Length == lower.Length + 1 &&
+                    bestEn.Value.Word.StartsWith(lower, StringComparison.Ordinal))
+                {
+                    bestEn = null;
+                }
 
                 SplitCandidate? splitEn = Settings.SplitRunTogetherWords && !isMidSentenceCap && wordToken.Length >= 4
                     ? RunTogetherSplitter.TrySplitEnglish(_lexicon, lower, _prevEnWord)
@@ -2005,7 +2040,11 @@ public sealed class AutoCorrectEngine
         }
 
         string rawLower = rawSpan.ToLowerInvariant();
-        if (_lexicon.IsProtectedWord(rawLower))
+        bool hasEnContextOrChain =
+            savedPrevEn is not null ||
+            (_recentSpaceTokens.Count > 0 && CanChainShortRuTokenToEn(_recentSpaceTokens[^1]));
+
+        if (_lexicon.IsProtectedWord(rawLower) && !(hasEnContextOrChain && rawLower == "афк"))
         {
             return null;
         }
@@ -2041,14 +2080,14 @@ public sealed class AutoCorrectEngine
             string? resolvedEnWord = TryResolveRuTypedEnglishWord(
                 rawSpan,
                 shouldCapSentence,
-                savedPrevEn is not null,
+                hasEnContextOrChain,
                 out char? ruMappedEnTrailPunct,
                 out bool turnOffCaps
             );
 
             if (resolvedEnWord is not null)
             {
-                ScoredCandidate? closeRu = savedPrevEn is null
+                ScoredCandidate? closeRu = !hasEnContextOrChain
                     ? NoisyChannelScorer.FindBestRuCandidate(
                         _lexicon,
                         rawLower,
@@ -2141,8 +2180,17 @@ public sealed class AutoCorrectEngine
             }
         }
 
+        bool hasEnContextOrChain =
+            hasPrevEnContext ||
+            (_recentSpaceTokens.Count > 0 && CanChainShortRuTokenToEn(_recentSpaceTokens[^1]));
+
+        if (!hasEnContextOrChain && string.Equals(cyrSpan, "афк", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         float minEnZipf = cyrSpan.Length == 3
-            ? (hasPrevEnContext ? 4.20f : (ContainsRussianVowel(cyrSpan.ToLowerInvariant()) ? 5.45f : 5.10f))
+            ? (hasEnContextOrChain ? 4.20f : (ContainsRussianVowel(cyrSpan.ToLowerInvariant()) ? 5.45f : 5.10f))
             : 3.30f;
 
         if ((_lexicon.TryGetEnWord(mappedEnLower, out EnWordEntry enTarget) && enTarget.Zipf >= minEnZipf) ||
@@ -2717,16 +2765,35 @@ public sealed class AutoCorrectEngine
 
         _hasTypedAnyWordInContext = true;
         _prevUnfixedStub = null;
-        _lastCompletedForHotkey = new CompletedHotkeyToken(desiredWord, delimiter.ToString());
+
+        int lastSpaceIdx = desiredWord.LastIndexOf(' ');
+        string lastWordOnly = lastSpaceIdx >= 0 ? desiredWord[(lastSpaceIdx + 1)..] : desiredWord;
+        _lastCompletedForHotkey = new CompletedHotkeyToken(lastWordOnly, delimiter.ToString());
 
         if (delimiter == ' ')
         {
-            _recentSpaceTokens.Add(new RecentSpaceToken(
-                originalWordForLearn,
-                desiredWord,
-                kind == CorrectionKind.WrongLayout,
-                false
-            ));
+            if (lastSpaceIdx >= 0)
+            {
+                string[] parts = desiredWord.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i < parts.Length; i++)
+                {
+                    _recentSpaceTokens.Add(new RecentSpaceToken(
+                        parts[i],
+                        parts[i],
+                        kind == CorrectionKind.WrongLayout,
+                        false
+                    ));
+                }
+            }
+            else
+            {
+                _recentSpaceTokens.Add(new RecentSpaceToken(
+                    originalWordForLearn,
+                    desiredWord,
+                    kind == CorrectionKind.WrongLayout,
+                    false
+                ));
+            }
             TrimRecentSpaceTokens();
         }
         else

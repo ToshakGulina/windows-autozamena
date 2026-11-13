@@ -46,7 +46,7 @@ jobs:
           } elseif (-not [string]::IsNullOrWhiteSpace("${{ inputs.publish_release_tag }}")) {
             $tag = "${{ inputs.publish_release_tag }}".Trim()
             $ver = $tag.TrimStart('v')
-          } elseif ("${{ github.event_name }}" -eq "push") {
+          } elseif ("${{ github.event_name }}" -eq "push" -and "${{ github.ref }}" -eq "refs/heads/main") {
             $tag = "v$ver"
           }
           "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append

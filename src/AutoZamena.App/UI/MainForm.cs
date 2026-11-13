@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 using AutoZamena.App.Config;
 using AutoZamena.App.Interop;
@@ -16,6 +17,7 @@ internal sealed class MainForm : Form
     private readonly AutoCorrectEngine _engine;
     private readonly LowLevelInputHook _hook;
     private readonly Action _onConfigUpdated;
+    private readonly SynchronizationContext _uiSyncContext;
 
     private bool _suppressEvents;
     private bool _allowRealClose;
@@ -89,6 +91,7 @@ internal sealed class MainForm : Form
         _engine = engine;
         _hook = hook;
         _onConfigUpdated = onConfigUpdated;
+        _uiSyncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         Icon = appIcon;
         Text = "AutoZamena";
@@ -104,6 +107,28 @@ internal sealed class MainForm : Form
         _engine.UserDictionary.Changed += OnUserDictionaryChangedSafe;
     }
 
+    private bool MarshalToUiIfNeeded(Action action)
+    {
+        if (IsDisposed)
+        {
+            return true;
+        }
+
+        if (!ReferenceEquals(SynchronizationContext.Current, _uiSyncContext))
+        {
+            _uiSyncContext.Post(_ =>
+            {
+                if (!IsDisposed)
+                {
+                    action();
+                }
+            }, null);
+            return true;
+        }
+
+        return false;
+    }
+
     public void RequestApplicationExit()
     {
         _allowRealClose = true;
@@ -112,9 +137,8 @@ internal sealed class MainForm : Form
 
     public void RefreshStatusBanner()
     {
-        if (InvokeRequired)
+        if (MarshalToUiIfNeeded(RefreshStatusBanner))
         {
-            BeginInvoke(RefreshStatusBanner);
             return;
         }
 
@@ -144,9 +168,8 @@ internal sealed class MainForm : Form
 
     public void ReloadFromConfigExternal()
     {
-        if (InvokeRequired)
+        if (MarshalToUiIfNeeded(ReloadFromConfigExternal))
         {
-            BeginInvoke(ReloadFromConfigExternal);
             return;
         }
         LoadValuesFromConfig();
@@ -154,9 +177,8 @@ internal sealed class MainForm : Form
 
     public void AppendHistoryEntry(CorrectionHistoryEntry entry)
     {
-        if (InvokeRequired)
+        if (MarshalToUiIfNeeded(() => AppendHistoryEntry(entry)))
         {
-            BeginInvoke(() => AppendHistoryEntry(entry));
             return;
         }
 
@@ -195,10 +217,8 @@ internal sealed class MainForm : Form
 
     private void OnUserDictionaryChangedSafe()
     {
-        if (IsDisposed) return;
-        if (InvokeRequired)
+        if (MarshalToUiIfNeeded(OnUserDictionaryChangedSafe))
         {
-            BeginInvoke(OnUserDictionaryChangedSafe);
             return;
         }
 
@@ -208,9 +228,8 @@ internal sealed class MainForm : Form
 
     public void RefreshExternalProcessFilter()
     {
-        if (InvokeRequired)
+        if (MarshalToUiIfNeeded(RefreshExternalProcessFilter))
         {
-            BeginInvoke(RefreshExternalProcessFilter);
             return;
         }
         RefreshProcessListBox();
@@ -1179,8 +1198,9 @@ internal sealed class MainForm : Form
 
         _hook.HotkeyRecorderInterceptor = (vk, ctrl, alt, shift) =>
         {
-            BeginInvoke(() =>
+            _uiSyncContext.Post(_ =>
             {
+                if (IsDisposed) return;
                 _hook.HotkeyRecorderInterceptor = null;
                 targetLabel.BackColor = Color.FromArgb(246, 248, 250);
 
@@ -1192,7 +1212,7 @@ internal sealed class MainForm : Form
 
                 RefreshHotkeyLabels();
                 RefreshStatusBanner();
-            });
+            }, null);
             return true;
         };
     }

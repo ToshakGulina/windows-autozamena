@@ -111,7 +111,7 @@ internal static class SelectionActionRunner
         // Let physical modifier key-up settle in the target window
         Thread.Sleep(18);
 
-        DataObject? backup = BackupClipboard();
+        DataObject? backup = BackupClipboard(out bool clipboardWasEmpty);
         uint seqBefore = NativeMethods.GetClipboardSequenceNumber();
 
         AtomicTextInjector.SendCtrlShortcut((ushort)'C');
@@ -136,6 +136,16 @@ internal static class SelectionActionRunner
             return;
         }
 
+        if (IsEmptySelectionWholeLineCopy())
+        {
+            RestoreClipboard(backup, clipboardWasEmpty, clipboardWasOverwritten: true);
+            if (toggleLayoutIfNoSelection)
+            {
+                AtomicTextInjector.ToggleActiveWindowKeyboardLayout();
+            }
+            return;
+        }
+
         string selectedText = string.Empty;
         try
         {
@@ -146,13 +156,13 @@ internal static class SelectionActionRunner
         }
         catch
         {
-            RestoreClipboard(backup);
+            RestoreClipboard(backup, clipboardWasEmpty, clipboardWasOverwritten: true);
             return;
         }
 
         if (string.IsNullOrEmpty(selectedText))
         {
-            RestoreClipboard(backup);
+            RestoreClipboard(backup, clipboardWasEmpty, clipboardWasOverwritten: true);
             if (toggleLayoutIfNoSelection)
             {
                 AtomicTextInjector.ToggleActiveWindowKeyboardLayout();
@@ -184,13 +194,13 @@ internal static class SelectionActionRunner
                 break;
 
             default:
-                RestoreClipboard(backup);
+                RestoreClipboard(backup, clipboardWasEmpty, clipboardWasOverwritten: true);
                 return;
         }
 
         if (string.Equals(transformed, selectedText, StringComparison.Ordinal))
         {
-            RestoreClipboard(backup);
+            RestoreClipboard(backup, clipboardWasEmpty, clipboardWasOverwritten: true);
             return;
         }
 
@@ -203,7 +213,7 @@ internal static class SelectionActionRunner
         }
         finally
         {
-            RestoreClipboard(backup);
+            RestoreClipboard(backup, clipboardWasEmpty, clipboardWasOverwritten: true);
         }
 
         if (switchTo != TargetLanguage.None)
@@ -216,8 +226,49 @@ internal static class SelectionActionRunner
         onCompleted?.Invoke(previewOrig, previewNew, reason);
     }
 
-    private static DataObject? BackupClipboard()
+    private static bool IsEmptySelectionWholeLineCopy()
     {
+        try
+        {
+            IDataObject? dataObj = Clipboard.GetDataObject();
+            if (dataObj is null)
+            {
+                return false;
+            }
+
+            if (dataObj.GetDataPresent("MSDEVLineSelect", autoConvert: false) ||
+                dataObj.GetDataPresent("VisualStudioEditorOperationsLineCutCopyClipboardTag", autoConvert: false) ||
+                dataObj.GetDataPresent("Borland IDE Block Type", autoConvert: false))
+            {
+                return true;
+            }
+
+            if (dataObj.GetDataPresent("vscode-editor-data", autoConvert: false))
+            {
+                object? raw = dataObj.GetData("vscode-editor-data", autoConvert: false);
+                string? meta = raw as string;
+                if (meta is null && raw is System.IO.MemoryStream ms)
+                {
+                    meta = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+                }
+
+                if (meta is not null && meta.Contains("\"isFromEmptySelection\":true", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // Ignore custom clipboard format inspection failures
+        }
+
+        return false;
+    }
+
+    private static DataObject? BackupClipboard(out bool wasEmpty)
+    {
+        wasEmpty = true;
         try
         {
             IDataObject? current = Clipboard.GetDataObject();
@@ -226,19 +277,24 @@ internal static class SelectionActionRunner
                 return null;
             }
 
+            string[] presentFormats = current.GetFormats(autoConvert: false);
+            wasEmpty = presentFormats is null || presentFormats.Length == 0;
+            if (wasEmpty)
+            {
+                return null;
+            }
+
             var clone = new DataObject();
-            string[] formats =
+            string[] textFormats =
             {
                 DataFormats.UnicodeText,
                 DataFormats.Text,
                 DataFormats.Html,
-                DataFormats.Rtf,
-                DataFormats.FileDrop,
-                DataFormats.Bitmap
+                DataFormats.Rtf
             };
 
             int savedCount = 0;
-            foreach (string fmt in formats)
+            foreach (string fmt in textFormats)
             {
                 try
                 {
@@ -258,6 +314,40 @@ internal static class SelectionActionRunner
                 }
             }
 
+            try
+            {
+                if (Clipboard.ContainsFileDropList())
+                {
+                    var files = Clipboard.GetFileDropList();
+                    if (files is { Count: > 0 })
+                    {
+                        clone.SetFileDropList(files);
+                        savedCount++;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore file drop read failure
+            }
+
+            try
+            {
+                if (Clipboard.ContainsImage())
+                {
+                    using System.Drawing.Image? img = Clipboard.GetImage();
+                    if (img is not null)
+                    {
+                        clone.SetImage(new System.Drawing.Bitmap(img));
+                        savedCount++;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore image conversion failure
+            }
+
             return savedCount > 0 ? clone : null;
         }
         catch
@@ -266,7 +356,7 @@ internal static class SelectionActionRunner
         }
     }
 
-    private static void RestoreClipboard(DataObject? backup)
+    private static void RestoreClipboard(DataObject? backup, bool clipboardWasEmpty, bool clipboardWasOverwritten)
     {
         try
         {
@@ -274,7 +364,7 @@ internal static class SelectionActionRunner
             {
                 Clipboard.SetDataObject(backup, copy: true);
             }
-            else
+            else if (clipboardWasEmpty && clipboardWasOverwritten)
             {
                 Clipboard.Clear();
             }

@@ -13,6 +13,10 @@ public sealed class RunTogetherSplittingTests
     [InlineData("неразделяет ", "не разделяет ")]
     [InlineData("неисправляет ", "не исправляет ")]
     [InlineData("неработает ", "не работает ")]
+    [InlineData("непонимаю ", "не понимаю ")]
+    [InlineData("недумаю ", "не думаю ")]
+    [InlineData("невижу ", "не вижу ")]
+    [InlineData("непомню ", "не помню ")]
     [InlineData("небудет ", "не будет ")]
     [InlineData("нехочу ", "не хочу ")]
     [InlineData("немогу ", "не могу ")]
@@ -48,6 +52,7 @@ public sealed class RunTogetherSplittingTests
 
     [Theory]
     [InlineData("goodmorning ", "good morning ")]
+    [InlineData("helloworld ", "hello world ")]
     [InlineData("thankyou ", "thank you ")]
     [InlineData("ofcourse ", "of course ")]
     [InlineData("alot ", "a lot ")]
@@ -59,6 +64,9 @@ public sealed class RunTogetherSplittingTests
     [InlineData("willbe ", "will be ")]
     [InlineData("havebeen ", "have been ")]
     [InlineData("dontknow ", "don't know ")]
+    [InlineData("cantfind ", "can't find ")]
+    [InlineData("letme ", "let me ")]
+    [InlineData("sofar ", "so far ")]
     [InlineData("idontknow ", "I don't know ")]
     public void EnglishRunTogetherWords_AreSplitCleanly(string input, string expected)
     {
@@ -67,7 +75,7 @@ public sealed class RunTogetherSplittingTests
     }
 
     [Fact]
-    public void SplitWords_PreserveCapitalizationPunctuationAndSupportImmediateBackspaceUndo()
+    public void SplitWords_PreserveCapitalizationPunctuationAndSupportImmediateAndDelayedBackspace()
     {
         var engine = new AutoCorrectEngine();
         Assert.Equal(
@@ -77,21 +85,79 @@ public sealed class RunTogetherSplittingTests
 
         engine.ResetContext();
         Assert.Equal("приветмир", engine.SimulateText("приветмир \b"));
+
+        // Backspacing across trailing space into a split multi-word phrase ("не знаю ") edits only the last word cleanly
+        engine.ResetContext();
+        Assert.Equal("не знает ", engine.SimulateText("незнаю при\b\b\b\b\bет "));
     }
 
     [Theory]
     [InlineData("видеозвонок ")]
+    [InlineData("фотоотчет ")]
+    [InlineData("фотоотчёт ")]
+    [InlineData("видеофайл ")]
+    [InlineData("самовывоз ")]
+    [InlineData("самозанятые ")]
     [InlineData("автозамена ")]
+    [InlineData("автозапуск ")]
+    [InlineData("автосохранение ")]
+    [InlineData("спецпредложение ")]
+    [InlineData("минимаркет ")]
+    [InlineData("бизнеспроцесс ")]
+    [InlineData("онлайнкурс ")]
+    [InlineData("интернетмагазин ")]
+    [InlineData("полстраны ")]
+    [InlineData("полслова ")]
+    [InlineData("полдела ")]
+    [InlineData("местонахождение ")]
+    [InlineData("умалишенный ")]
     [InlineData("многопоточность ")]
     [InlineData("самообучение ")]
     [InlineData("перезапустить ")]
+    [InlineData("перезайти ")]
+    [InlineData("переподключить ")]
+    [InlineData("докинуть ")]
     [InlineData("пофиксить ")]
     [InlineData("подключить ")]
+    [InlineData("мержить ")]
+    [InlineData("смержить ")]
+    [InlineData("замержить ")]
+    [InlineData("сторис ")]
+    [InlineData("копилот ")]
     [InlineData("небольшой ")]
     [InlineData("некастомный ")]
     [InlineData("Яне ")]
     [InlineData("codebase ")]
     [InlineData("filename ")]
+    [InlineData("screenshot ")]
+    [InlineData("screenshots ")]
+    [InlineData("frontend ")]
+    [InlineData("backend ")]
+    [InlineData("dropdown ")]
+    [InlineData("textarea ")]
+    [InlineData("scrollbar ")]
+    [InlineData("statusbar ")]
+    [InlineData("tooltip ")]
+    [InlineData("hotfix ")]
+    [InlineData("bugfix ")]
+    [InlineData("hotkeys ")]
+    [InlineData("logout ")]
+    [InlineData("signout ")]
+    [InlineData("rollout ")]
+    [InlineData("walkthrough ")]
+    [InlineData("workaround ")]
+    [InlineData("healthcheck ")]
+    [InlineData("changelog ")]
+    [InlineData("roadmap ")]
+    [InlineData("livestream ")]
+    [InlineData("allowlist ")]
+    [InlineData("blocklist ")]
+    [InlineData("ratelimit ")]
+    [InlineData("pushback ")]
+    [InlineData("goodnight ")]
+    [InlineData("snowstorm ")]
+    [InlineData("cloudwatch ")]
+    [InlineData("tailwind ")]
     [InlineData("workplace ")]
     [InlineData("workflow ")]
     [InlineData("username ")]

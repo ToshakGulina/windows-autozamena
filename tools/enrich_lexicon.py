@@ -112,7 +112,46 @@ MODERN_RU_PARADIGMS: list[list[tuple[str, int]]] = [
     expand_fem_a_noun("перезагрузка", gen_pl_zero=True),
     [("госуслуги", 325), ("госуслуг", 310), ("госуслугам", 280), ("госуслугах", 295)],
     [("автоисправление", 305), ("автоисправления", 290), ("автоисправлению", 265), ("автоисправлением", 265)],
+    [("автодополнение", 300), ("автодополнения", 285), ("автосохранение", 300), ("автообновление", 300), ("автозапуск", 305)],
+    [("самовывоз", 315), ("самовывоза", 290), ("самовывозом", 280), ("самозанятый", 310), ("самозанятые", 310), ("самозанятых", 295)],
+    [("перезайти", 320), ("перезашел", 310), ("перезашёл", 310), ("перезашла", 300), ("перезашли", 300), ("переподключить", 300)],
+    [("докинуть", 310), ("докинул", 295), ("докинула", 290), ("закинуть", 325), ("скинуть", 335)],
+    expand_masc_noun("промпт"),
+    expand_masc_noun("дедлайн"),
+    expand_masc_noun("бэкап"),
+    expand_masc_noun("хотфикс"),
+    expand_masc_noun("стрим"),
+    expand_masc_noun("донат"),
+    expand_masc_noun("телеграм"),
+    expand_masc_noun("гитхаб"),
+    [("сторис", 315)],
 ]
+
+MODERN_EN_WORDS: dict[str, int] = {
+    "screenshot": 395, "screenshots": 370,
+    "frontend": 385, "backend": 390, "fullstack": 340,
+    "dropdown": 365, "dropdowns": 330,
+    "checkbox": 365, "checkboxes": 335,
+    "textarea": 345,
+    "tooltip": 355, "tooltips": 330,
+    "scrollbar": 345, "statusbar": 335, "topbar": 330, "titlebar": 330, "sidebar": 375, "navbar": 345,
+    "hotkey": 365, "hotkeys": 350, "shortcut": 390, "shortcuts": 375,
+    "codebase": 365, "worktree": 330, "lockfile": 325, "makefile": 345, "dockerfile": 350,
+    "filepath": 340, "filename": 385, "filenames": 355, "pathname": 345, "hostname": 375,
+    "endpoint": 380, "endpoints": 365, "webhook": 355, "webhooks": 345,
+    "livestream": 360, "paywall": 350,
+    "whitelist": 360, "blacklist": 370, "allowlist": 340, "blocklist": 340, "ratelimit": 325,
+    "timestamp": 380, "timestamps": 355, "healthcheck": 330,
+    "rollout": 365, "rollback": 365, "fallback": 375, "pushback": 355, "feedback": 445,
+    "walkthrough": 365, "workaround": 380, "workarounds": 350, "tradeoff": 355, "tradeoffs": 345,
+    "hotfix": 355, "bugfix": 340, "changelog": 360, "roadmap": 385,
+    "logout": 375, "login": 425, "signup": 385, "signin": 365, "signout": 345,
+    "checkout": 410, "checkin": 350, "timeout": 385, "timeouts": 345, "workout": 410, "workouts": 375,
+    "popup": 375, "popups": 350, "plugin": 405, "plugins": 385, "addon": 355, "addons": 345,
+    "autocorrect": 360, "autocomplete": 355, "autosave": 345, "autostart": 340, "autofix": 325,
+    "microservice": 340, "microservices": 355, "monorepo": 335, "devops": 365,
+    "overthink": 345, "overthinking": 355,
+}
 
 EXTRA_EXPLICIT_FIXES = {
     "малако": "молоко",
@@ -294,6 +333,15 @@ def main() -> None:
                 ru_map[w] = (min_z_sc, 16, existing_lid)
                 added_ru += 1
 
+    added_en = 0
+    for w, min_z_sc in MODERN_EN_WORDS.items():
+        if w in en_map:
+            old_z, old_fl = en_map[w]
+            en_map[w] = (max(old_z, min_z_sc), old_fl | 16)
+        else:
+            en_map[w] = (min_z_sc, 16)
+            added_en += 1
+
     # Enable CandidateTarget (flag 16) on corpus-attested RU & EN words
     newly_targeted_ru = 0
     for w, (z_sc, fl, lid) in list(ru_map.items()):
@@ -315,8 +363,27 @@ def main() -> None:
         ru_map.pop(bad, None)
         en_map.pop(bad, None)
 
-    # Protect ambiguous 3-letter tech/country codes from EN->RU false layout switching
-    prot_set.update({"cif", "lng", "кпд", "мгу", "ввп", "нло", "дтп", "жкх", "зож", "сми", "вуз"})
+    # Protect ambiguous tech/country codes, everyday chat slang, and CLI/dev identifiers from false edits/splits
+    prot_set.update({
+        "cif", "lng", "кпд", "мгу", "ввп", "нло", "дтп", "жкх", "зож", "сми", "вуз",
+        # Russian chat/informal/IT shorthands (kept untouched, never offered as typo replacement targets)
+        "прив", "здаров", "спс", "пжл", "плз", "гоу", "бро", "тян",
+        "вк", "тг", "лс", "чс", "гс", "хз", "мб", "кст", "пвп", "пве", "лфг",
+        "имхо", "рофл", "кринж", "вайб", "чилл", "треш", "трэш",
+        "смержи", "смержил", "смёржил", "мержить", "смержить", "замержить",
+        "пушнул", "чекни", "пруф", "пруфы", "инфа", "инфу", "инфы", "инст", "инста",
+        "скрин", "скрины", "войс", "войсы", "фулл", "бекап", "дейлик",
+        "созвон", "созвоны", "димас", "санёк", "санек", "денчик",
+        "рилс", "рилсы", "шортс", "копилот", "чатгпт", "гитлаб", "апка", "апки", "либа", "либы",
+        # English chat/CLI/dev shorthands (verified zero collision with Russian layout words)
+        "pls", "plz", "thx", "nvm", "idk", "imo", "imho", "tbh", "afaik", "iirc", "fyi",
+        "btw", "brb", "afk", "gtg", "omg", "wtf", "wth", "smh", "irl", "ngl",
+        "envs", "args", "kwargs", "params", "props", "refs", "utils", "configs",
+        "grep", "curl", "wget", "chmod", "chown", "mkdir", "sudo", "pipx", "conda",
+        "nuget", "pytest", "xunit", "prisma", "nextjs", "nuxt", "vite", "webpack",
+        "eslint", "authn", "authz", "init", "impl", "perf", "prod", "devs", "repos",
+        "diffs", "auth", "async", "repo", "diff", "dev", "env",
+    })
 
     # Re-sort and serialize AZLX v1
     sorted_ru = sorted(ru_map.keys())
