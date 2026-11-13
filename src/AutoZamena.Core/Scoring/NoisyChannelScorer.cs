@@ -368,6 +368,10 @@ public static class NoisyChannelScorer
         // Missing soft/hard sign (especially -тся -> -ться)
         if (missing is 'ь' or 'ъ')
         {
+            if (missing == 'ь' && cand.EndsWith("ться", StringComparison.Ordinal) && candIndex == cand.Length - 3)
+            {
+                return 0.28f;
+            }
             return 0.45f;
         }
 
@@ -420,7 +424,8 @@ public static class NoisyChannelScorer
         {
             <= 3 => 2.65f,
             4 => 2.15f,
-            _ => 1.65f
+            <= 8 => 1.65f,
+            _ => 1.05f
         };
 
         if (isMidSentenceCapitalized)
