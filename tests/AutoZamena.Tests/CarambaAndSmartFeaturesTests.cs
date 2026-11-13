@@ -136,7 +136,7 @@ public sealed class CarambaAndSmartFeaturesTests
         var engine = new AutoCorrectEngine();
 
         // Simulate user clicking with the mouse into the middle of an existing word and typing a fragment
-        engine.NotifyPointerOrFocusChanged(suppressCurrentFragment: true);
+        engine.NotifyPointerOrFocusChanged(true);
         Assert.Equal("ghbdtn ", engine.SimulateText("ghbdtn "));
 
         // Immediately on the NEXT fresh word after the space, normal wrong-layout auto-switching resumes!
