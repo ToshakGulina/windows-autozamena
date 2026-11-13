@@ -12,7 +12,8 @@ using AutoZamena.Core.Models;
 namespace AutoZamena.App.UI;
 
 /// <summary>
-/// Hosts the persistent Windows system tray icon, context menu, settings window, and global input hooks.
+/// Hosts the persistent Windows system tray icon, dynamic RU/EN language badge, Caramba quick toggles,
+/// settings window, and global input hooks.
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
@@ -22,19 +23,30 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly WindowContextGuard _contextGuard;
     private readonly LowLevelInputHook _hook;
 
-    private readonly Icon _iconActive;
-    private readonly Icon _iconStandby;
+    private readonly Icon _iconActiveGeneric;
+    private readonly Icon _iconActiveRu;
+    private readonly Icon _iconActiveEn;
+    private readonly Icon _iconStandbyGeneric;
+    private readonly Icon _iconStandbyRu;
+    private readonly Icon _iconStandbyEn;
     private readonly Icon _iconPaused;
+
     private readonly NotifyIcon _trayIcon;
+    private readonly System.Windows.Forms.Timer _layoutPollTimer;
     private readonly ToolStripMenuItem _miSessionStats;
     private readonly ToolStripMenuItem _miTogglePause;
+    private readonly ToolStripMenuItem _miAutoLayoutSwitch;
+    private readonly ToolStripMenuItem _miSingleShift;
+    private readonly ToolStripMenuItem _miSwitchSound;
     private readonly ToolStripMenuItem _miExcludeLastApp;
     private readonly MainForm _mainForm;
     private readonly RegisteredWaitHandle? _activateWaitRegistration;
 
     private ContextStatus _currentContextStatus = ContextStatus.Allowed;
+    private TargetLanguage _currentDetectedLayout = TargetLanguage.None;
     private string _lastExternalProcess = string.Empty;
     private int _sessionFixedCount;
+    private bool _suppressTrayMenuEvents;
 
     public TrayApplicationContext(bool startMinimized, EventWaitHandle? activateSignal = null)
     {
@@ -55,21 +67,25 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _contextGuard = new WindowContextGuard();
         _hook = new LowLevelInputHook(_engine, _contextGuard, _config);
 
-        _iconActive = TrayIconGenerator.CreateIcon(TrayVisualState.Active);
-        _iconStandby = TrayIconGenerator.CreateIcon(TrayVisualState.StandbyFilteredApp);
-        _iconPaused = TrayIconGenerator.CreateIcon(TrayVisualState.Paused);
+        _iconActiveGeneric = TrayIconGenerator.CreateIcon(TrayVisualState.Active, "А");
+        _iconActiveRu = TrayIconGenerator.CreateIcon(TrayVisualState.Active, "RU", isEnglishAccent: false);
+        _iconActiveEn = TrayIconGenerator.CreateIcon(TrayVisualState.Active, "EN", isEnglishAccent: true);
+        _iconStandbyGeneric = TrayIconGenerator.CreateIcon(TrayVisualState.StandbyFilteredApp, "А");
+        _iconStandbyRu = TrayIconGenerator.CreateIcon(TrayVisualState.StandbyFilteredApp, "RU");
+        _iconStandbyEn = TrayIconGenerator.CreateIcon(TrayVisualState.StandbyFilteredApp, "EN");
+        _iconPaused = TrayIconGenerator.CreateIcon(TrayVisualState.Paused, "А");
 
         _mainForm = new MainForm(
             _config,
             _engine,
             _hook,
-            _iconActive,
+            _iconActiveGeneric,
             onConfigUpdated: OnConfigUpdatedFromUi
         );
 
         _contextGuard.IsOwnSandboxFocused = () => _mainForm.IsSandboxInputFocused;
 
-        // Build Tray Context Menu
+        // Build Tray Context Menu (with Caramba Switcher quick toggles right in the tray!)
         var menu = new ContextMenuStrip();
 
         _miSessionStats = new ToolStripMenuItem("Исправлено за сессию: 0")
@@ -85,6 +101,41 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         _miTogglePause = new ToolStripMenuItem();
         _miTogglePause.Click += (_, _) => TogglePauseFromMenu();
+
+        _miAutoLayoutSwitch = new ToolStripMenuItem("Автопереключение раскладки (RU ↔ EN)")
+        {
+            CheckOnClick = true
+        };
+        _miAutoLayoutSwitch.CheckedChanged += (_, _) =>
+        {
+            if (_suppressTrayMenuEvents) return;
+            _config.Engine.LayoutMode = _miAutoLayoutSwitch.Checked
+                ? LayoutSwitchMode.AutoHighConfidenceAndHotkey
+                : LayoutSwitchMode.HotkeyOnly;
+            SaveAndSyncWithMainForm();
+        };
+
+        _miSingleShift = new ToolStripMenuItem("Менять язык одиночным Shift (Single Shift)")
+        {
+            CheckOnClick = true
+        };
+        _miSingleShift.CheckedChanged += (_, _) =>
+        {
+            if (_suppressTrayMenuEvents) return;
+            _config.UseSingleShiftLayoutSwitch = _miSingleShift.Checked;
+            SaveAndSyncWithMainForm();
+        };
+
+        _miSwitchSound = new ToolStripMenuItem("Звуковой щелчок при автопереключении")
+        {
+            CheckOnClick = true
+        };
+        _miSwitchSound.CheckedChanged += (_, _) =>
+        {
+            if (_suppressTrayMenuEvents) return;
+            _config.PlaySoundOnAutoSwitch = _miSwitchSound.Checked;
+            SaveAndSyncWithMainForm();
+        };
 
         _miExcludeLastApp = new ToolStripMenuItem("Не исправлять в активном приложении")
         {
@@ -106,6 +157,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_miTogglePause);
         menu.Items.Add(_miSessionStats);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_miAutoLayoutSwitch);
+        menu.Items.Add(_miSingleShift);
+        menu.Items.Add(_miSwitchSound);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_miExcludeLastApp);
         menu.Items.Add(miStartup);
         menu.Items.Add(new ToolStripSeparator());
@@ -118,7 +173,25 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _trayIcon.DoubleClick += (_, _) => ShowMainForm();
 
+        _currentDetectedLayout = AtomicTextInjector.GetActiveLanguageTag();
         RefreshTrayVisuals();
+
+        // Lightweight poll keeping the RU / EN tray badge in sync with foreground window layout
+        _layoutPollTimer = new System.Windows.Forms.Timer { Interval = 450 };
+        _layoutPollTimer.Tick += (_, _) =>
+        {
+            if (!_config.ShowLanguageBadgeInTray)
+            {
+                return;
+            }
+            TargetLanguage lang = AtomicTextInjector.GetActiveLanguageTag();
+            if (lang != _currentDetectedLayout)
+            {
+                _currentDetectedLayout = lang;
+                RefreshTrayVisuals();
+            }
+        };
+        _layoutPollTimer.Start();
 
         // Wire hook events (all marshaled asynchronously onto UI thread so WH_KEYBOARD_LL never blocks)
         _hook.PauseToggledByHotkey += OnPauseToggledByHotkey;
@@ -159,13 +232,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _mainForm.BringToFront();
     }
 
-    private void TogglePauseFromMenu()
+    private void SaveAndSyncWithMainForm()
     {
-        _config.Engine.Enabled = !_config.Engine.Enabled;
         _hook.UpdateConfig(_config);
         _config.Save();
         RefreshTrayVisuals();
-        _mainForm.RefreshStatusBanner();
+        _mainForm.ReloadFromConfigExternal();
+    }
+
+    private void TogglePauseFromMenu()
+    {
+        _config.Engine.Enabled = !_config.Engine.Enabled;
+        SaveAndSyncWithMainForm();
     }
 
     private void OnPauseToggledByHotkey()
@@ -179,12 +257,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (_config.ShowTrayNotifications)
             {
                 bool active = _config.Engine.Enabled;
+                string pauseHint = GetPauseShortcutLabel();
                 _trayIcon.ShowBalloonTip(
                     1800,
                     active ? "AutoZamena включена" : "AutoZamena на паузе",
                     active
-                        ? "Автозамена снова исправляет опечатки на лету."
-                        : $"Автозамена приостановлена ({_config.PauseToggleHotkey.ToDisplayString()} — включить обратно).",
+                        ? "Автозамена снова исправляет опечатки и раскладку на лету."
+                        : $"Автозамена приостановлена ({pauseHint} — включить обратно).",
                     ToolTipIcon.Info
                 );
             }
@@ -200,6 +279,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 _sessionFixedCount++;
                 _miSessionStats.Text = $"Исправлено за сессию: {_sessionFixedCount}";
             }
+            _currentDetectedLayout = AtomicTextInjector.GetActiveLanguageTag();
+            RefreshTrayVisuals();
             _mainForm.AppendHistoryEntry(entry);
         }, null);
     }
@@ -209,6 +290,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _uiSyncContext.Post(_ =>
         {
             _currentContextStatus = status;
+            _currentDetectedLayout = AtomicTextInjector.GetActiveLanguageTag();
             RefreshTrayVisuals();
 
             if (!string.IsNullOrWhiteSpace(procName) &&
@@ -250,30 +332,64 @@ internal sealed class TrayApplicationContext : ApplicationContext
         RefreshTrayVisuals();
     }
 
+    private string GetPauseShortcutLabel()
+    {
+        if (_config.UseBothShiftsPause)
+        {
+            return "Левый + Правый Shift";
+        }
+        return _config.PauseToggleHotkey.ToDisplayString();
+    }
+
     private void RefreshTrayVisuals()
     {
+        _suppressTrayMenuEvents = true;
+        try
+        {
+            _miAutoLayoutSwitch.Checked = _config.Engine.LayoutMode == LayoutSwitchMode.AutoHighConfidenceAndHotkey;
+            _miSingleShift.Checked = _config.UseSingleShiftLayoutSwitch;
+            _miSwitchSound.Checked = _config.PlaySoundOnAutoSwitch;
+        }
+        finally
+        {
+            _suppressTrayMenuEvents = false;
+        }
+
         bool active = _config.Engine.Enabled;
-        string hk = _config.PauseToggleHotkey.ToDisplayString();
+        string pauseHint = GetPauseShortcutLabel();
         _miTogglePause.Text = active
-            ? $"Поставить на паузу ({hk})"
-            : $"Включить автозамену ({hk})";
+            ? $"Поставить на паузу ({pauseHint})"
+            : $"Включить автозамену ({pauseHint})";
 
         if (!active)
         {
             _trayIcon.Icon = _iconPaused;
-            SetSafeTrayTooltip($"AutoZamena — На паузе ({hk})");
+            SetSafeTrayTooltip($"AutoZamena — На паузе ({pauseHint})");
             return;
         }
+
+        string langTag = _currentDetectedLayout switch
+        {
+            TargetLanguage.Russian => " [RU]",
+            TargetLanguage.English => " [EN]",
+            _ => string.Empty
+        };
 
         if (_currentContextStatus is ContextStatus.FilteredApp or ContextStatus.FullscreenGame or ContextStatus.PasswordField)
         {
-            _trayIcon.Icon = _iconStandby;
-            SetSafeTrayTooltip("AutoZamena — Отключена для текущего окна");
+            _trayIcon.Icon = !_config.ShowLanguageBadgeInTray ? _iconStandbyGeneric
+                : _currentDetectedLayout == TargetLanguage.Russian ? _iconStandbyRu
+                : _currentDetectedLayout == TargetLanguage.English ? _iconStandbyEn
+                : _iconStandbyGeneric;
+            SetSafeTrayTooltip($"AutoZamena{langTag} — Отключена для текущего окна");
             return;
         }
 
-        _trayIcon.Icon = _iconActive;
-        SetSafeTrayTooltip($"AutoZamena — Активна ({hk})");
+        _trayIcon.Icon = !_config.ShowLanguageBadgeInTray ? _iconActiveGeneric
+            : _currentDetectedLayout == TargetLanguage.Russian ? _iconActiveRu
+            : _currentDetectedLayout == TargetLanguage.English ? _iconActiveEn
+            : _iconActiveGeneric;
+        SetSafeTrayTooltip($"AutoZamena{langTag} — Активна (2×Shift — перевод)");
     }
 
     private void SetSafeTrayTooltip(string tip)
@@ -283,6 +399,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ExitCleanly()
     {
+        _layoutPollTimer.Stop();
         _activateWaitRegistration?.Unregister(null);
         _hook.Stop();
         _trayIcon.Visible = false;
@@ -294,13 +411,18 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _layoutPollTimer.Dispose();
             _activateWaitRegistration?.Unregister(null);
             _hook.Dispose();
             _contextGuard.Dispose();
             _trayIcon.Visible = false;
             _trayIcon.Dispose();
-            _iconActive.Dispose();
-            _iconStandby.Dispose();
+            _iconActiveGeneric.Dispose();
+            _iconActiveRu.Dispose();
+            _iconActiveEn.Dispose();
+            _iconStandbyGeneric.Dispose();
+            _iconStandbyRu.Dispose();
+            _iconStandbyEn.Dispose();
             _iconPaused.Dispose();
             _mainForm.Dispose();
         }

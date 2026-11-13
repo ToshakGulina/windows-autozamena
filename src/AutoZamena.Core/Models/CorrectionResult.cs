@@ -1,3 +1,5 @@
+using System;
+
 namespace AutoZamena.Core.Models;
 
 public enum CorrectionKind
@@ -13,7 +15,8 @@ public enum CorrectionKind
     WrongLayout = 8,
     HotkeyLayoutSwitch = 9,
     UndoRestore = 10,
-    InvertedCaps = 11
+    InvertedCaps = 11,
+    SmartPunctuation = 12
 }
 
 /// <summary>
@@ -29,7 +32,8 @@ public sealed record CorrectionResult(
     TargetLanguage SwitchLayoutTo = TargetLanguage.None,
     double ConfidenceScore = 0.0,
     string Reason = "",
-    bool TurnOffCapsLock = false
+    bool TurnOffCapsLock = false,
+    int MoveCursorLeftCount = 0
 )
 {
     public static readonly CorrectionResult NoChange = new(
@@ -56,7 +60,8 @@ public sealed record CorrectionResult(
         TargetLanguage switchLayoutTo = TargetLanguage.None,
         double confidenceScore = 1.0,
         string reason = "",
-        bool turnOffCapsLock = false)
+        bool turnOffCapsLock = false,
+        int moveCursorLeftCount = 0)
     {
         int common = CommonPrefixLength(onScreenBeforeCaret, desiredText);
         int backspaces = onScreenBeforeCaret.Length - common;
@@ -72,7 +77,8 @@ public sealed record CorrectionResult(
             switchLayoutTo,
             confidenceScore,
             reason,
-            turnOffCapsLock
+            turnOffCapsLock,
+            moveCursorLeftCount
         );
     }
 

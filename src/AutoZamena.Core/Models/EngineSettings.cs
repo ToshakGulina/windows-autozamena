@@ -33,6 +33,8 @@ public sealed class EngineSettings
     public bool FixSpacebarRollover { get; set; } = true;
     public bool AutoCapitalizeAfterSentence { get; set; } = true;
     public bool AutoCapitalizeFirstWord { get; set; } = false;
+    public bool DoubleSpacePeriod { get; set; } = true;
+    public bool SmartTypography { get; set; } = true;
 
     // Layout correction (ghbdtn <-> привет)
     public LayoutSwitchMode LayoutMode { get; set; } = LayoutSwitchMode.AutoHighConfidenceAndHotkey;
@@ -54,6 +56,8 @@ public sealed class EngineSettings
             FixSpacebarRollover = FixSpacebarRollover,
             AutoCapitalizeAfterSentence = AutoCapitalizeAfterSentence,
             AutoCapitalizeFirstWord = AutoCapitalizeFirstWord,
+            DoubleSpacePeriod = DoubleSpacePeriod,
+            SmartTypography = SmartTypography,
             LayoutMode = LayoutMode,
             SwitchSystemLayoutOnAutoFix = SwitchSystemLayoutOnAutoFix,
             UndoOnImmediateBackspace = UndoOnImmediateBackspace,

@@ -83,6 +83,13 @@ internal static class AtomicTextInjector
             }
         }
 
+        // 4. Optional cursor backtrack for dynamic snippets with '|' cursor placeholder (e.g. «|»)
+        for (int i = 0; i < result.MoveCursorLeftCount; i++)
+        {
+            AddVkKey(inputs, NativeMethods.VK_LEFT, keyUp: false, extended: true);
+            AddVkKey(inputs, NativeMethods.VK_LEFT, keyUp: true, extended: true);
+        }
+
         // Restore physical Shift state if user is still holding it for the next word
         if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: false);
         if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: false);
@@ -99,8 +106,93 @@ internal static class AtomicTextInjector
         }
     }
 
-    private static void AddVkKey(List<NativeMethods.INPUT> list, ushort vk, bool keyUp)
+    public static void SendCtrlShortcut(ushort asciiUpperVk)
     {
+        var inputs = new List<NativeMethods.INPUT>(12);
+
+        bool lShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_LSHIFT) & 0x8000) != 0;
+        bool rShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RSHIFT) & 0x8000) != 0;
+        bool lAltDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_LMENU) & 0x8000) != 0;
+        bool rAltDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RMENU) & 0x8000) != 0;
+
+        if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: true);
+        if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: true);
+        if (lAltDown) AddVkKey(inputs, NativeMethods.VK_LMENU, keyUp: true);
+        if (rAltDown) AddVkKey(inputs, NativeMethods.VK_RMENU, keyUp: true);
+
+        AddVkKey(inputs, NativeMethods.VK_LCONTROL, keyUp: false);
+        AddVkKey(inputs, asciiUpperVk, keyUp: false);
+        AddVkKey(inputs, asciiUpperVk, keyUp: true);
+        AddVkKey(inputs, NativeMethods.VK_LCONTROL, keyUp: true);
+
+        NativeMethods.INPUT[] arr = inputs.ToArray();
+        NativeMethods.SendInput((uint)arr.Length, arr, Marshal.SizeOf<NativeMethods.INPUT>());
+    }
+
+    public static TargetLanguage GetActiveLanguageTag()
+    {
+        (_, _, IntPtr activeHkl, _) = NativeMethods.GetActiveFocusAndLayout();
+        ushort langId = (ushort)((ulong)activeHkl & 0xFFFF);
+        ushort primary = (ushort)(langId & 0x03FF);
+        return primary switch
+        {
+            PrimaryLangRussian => TargetLanguage.Russian,
+            PrimaryLangEnglish => TargetLanguage.English,
+            _ => TargetLanguage.None
+        };
+    }
+
+    public static TargetLanguage ToggleActiveWindowKeyboardLayout()
+    {
+        (IntPtr focusHwnd, IntPtr topHwnd, IntPtr activeHkl, _) = NativeMethods.GetActiveFocusAndLayout();
+        IntPtr targetHwnd = focusHwnd != IntPtr.Zero ? focusHwnd : topHwnd;
+        if (targetHwnd == IntPtr.Zero)
+        {
+            return TargetLanguage.None;
+        }
+
+        ushort activeLangId = (ushort)((ulong)activeHkl & 0xFFFF);
+        ushort activePrimary = (ushort)(activeLangId & 0x03FF);
+
+        // Prefer explicit RU <-> EN toggle when both are installed (Caramba style), falling back to cyclic next HKL
+        TargetLanguage desiredOpposite = activePrimary == PrimaryLangRussian
+            ? TargetLanguage.English
+            : TargetLanguage.Russian;
+
+        IntPtr[] hkls = GetInstalledKeyboardLayoutsCached();
+        if (hkls.Length >= 2)
+        {
+            ushort desiredPrimary = desiredOpposite == TargetLanguage.Russian
+                ? PrimaryLangRussian
+                : PrimaryLangEnglish;
+
+            for (int i = 0; i < hkls.Length; i++)
+            {
+                ushort lid = (ushort)((ulong)hkls[i] & 0xFFFF);
+                if ((lid & 0x03FF) == desiredPrimary)
+                {
+                    NativeMethods.PostMessageW(targetHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, hkls[i]);
+                    return desiredOpposite;
+                }
+            }
+
+            // Fallback: cycle to next installed HKL
+            int curIdx = Array.IndexOf(hkls, activeHkl);
+            IntPtr nextHkl = hkls[(curIdx + 1) % hkls.Length];
+            NativeMethods.PostMessageW(targetHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, nextHkl);
+        }
+
+        return desiredOpposite;
+    }
+
+    private static void AddVkKey(List<NativeMethods.INPUT> list, ushort vk, bool keyUp, bool extended = false)
+    {
+        uint flags = keyUp ? NativeMethods.KEYEVENTF_KEYUP : 0u;
+        if (extended)
+        {
+            flags |= NativeMethods.KEYEVENTF_EXTENDEDKEY;
+        }
+
         list.Add(new NativeMethods.INPUT
         {
             type = NativeMethods.INPUT_KEYBOARD,
@@ -110,7 +202,7 @@ internal static class AtomicTextInjector
                 {
                     wVk = vk,
                     wScan = 0,
-                    dwFlags = keyUp ? NativeMethods.KEYEVENTF_KEYUP : 0u,
+                    dwFlags = flags,
                     time = 0,
                     dwExtraInfo = NativeMethods.MagicExtraInfo
                 }

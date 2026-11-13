@@ -100,6 +100,8 @@ public sealed class AppConfig
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All)
     };
 
+    public int ConfigSchemaVersion { get; set; } = 2;
+
     public EngineSettings Engine { get; set; } = new();
 
     public WindowFilterMode FilterMode { get; set; } = WindowFilterMode.Blacklist;
@@ -109,13 +111,24 @@ public sealed class AppConfig
     public List<string> BlacklistedProcesses { get; set; } = CreateDefaultBlacklist();
     public List<string> WhitelistedProcesses { get; set; } = CreateDefaultWhitelist();
 
+    // Caramba Switcher style modifier gestures (enabled out-of-the-box, no Pause/Break needed!)
+    public bool UseDoubleShiftConvert { get; set; } = true;       // 2x Shift -> convert last word / cancel auto-switch / convert selected text
+    public bool UseBothShiftsPause { get; set; } = true;          // Left Shift + Right Shift -> toggle Pause / Resume
+    public bool UseSingleShiftLayoutSwitch { get; set; } = false; // 1x Shift -> switch active OS layout (optional Caramba toggle)
+    public bool UseDoubleCtrlConvertLine { get; set; } = true;    // 2x Ctrl -> convert whole typed line without selection
+
+    // Optional regular key bindings (no Pause/Break by default!)
     public HotkeyBinding PauseToggleHotkey { get; set; } = new(ctrl: true, alt: true, shift: false, virtualKey: 0x5A); // Ctrl+Alt+Z
-    public HotkeyBinding ConvertLayoutHotkey { get; set; } = new(ctrl: false, alt: false, shift: false, virtualKey: 0x13); // Pause/Break
+    public HotkeyBinding ConvertLayoutHotkey { get; set; } = new(); // Empty by default (Double Shift is primary)
+    public HotkeyBinding CycleCaseHotkey { get; set; } = new(ctrl: true, alt: true, shift: false, virtualKey: 0x4B);   // Ctrl+Alt+K
+    public HotkeyBinding TransliterateHotkey { get; set; } = new(ctrl: true, alt: true, shift: false, virtualKey: 0x54); // Ctrl+Alt+T
 
     public List<string> IgnoredWords { get; set; } = new();
     public Dictionary<string, string> CustomReplacements { get; set; } = new();
 
     public bool ShowTrayNotifications { get; set; } = true;
+    public bool PlaySoundOnAutoSwitch { get; set; } = false;
+    public bool ShowLanguageBadgeInTray { get; set; } = true;
 
     public static List<string> CreateDefaultBlacklist() => new()
     {
@@ -181,30 +194,62 @@ public sealed class AppConfig
             }
 
             string json = File.ReadAllText(filePath);
-            if (string.IsNullOrWhiteSpace(json))
+            AppConfig? loaded = ParseAndMigrateJson(json, out bool migrated);
+            if (loaded is not null && migrated)
             {
-                return null;
+                loaded.Save();
             }
 
-            AppConfig? loaded = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
-            if (loaded is null)
-            {
-                return null;
-            }
-
-            loaded.Engine ??= new EngineSettings();
-            loaded.BlacklistedProcesses ??= CreateDefaultBlacklist();
-            loaded.WhitelistedProcesses ??= CreateDefaultWhitelist();
-            loaded.PauseToggleHotkey ??= new HotkeyBinding(true, true, false, 0x5A);
-            loaded.ConvertLayoutHotkey ??= new HotkeyBinding(false, false, false, 0x13);
-            loaded.IgnoredWords ??= new List<string>();
-            loaded.CustomReplacements ??= new Dictionary<string, string>();
             return loaded;
         }
         catch
         {
             return null;
         }
+    }
+
+    public static AppConfig? ParseAndMigrateJson(string json, out bool migrated)
+    {
+        migrated = false;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        AppConfig? loaded = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
+        if (loaded is null)
+        {
+            return null;
+        }
+
+        loaded.Engine ??= new EngineSettings();
+        loaded.BlacklistedProcesses ??= CreateDefaultBlacklist();
+        loaded.WhitelistedProcesses ??= CreateDefaultWhitelist();
+        loaded.PauseToggleHotkey ??= new HotkeyBinding(true, true, false, 0x5A);
+        loaded.ConvertLayoutHotkey ??= new HotkeyBinding();
+        loaded.CycleCaseHotkey ??= new HotkeyBinding(true, true, false, 0x4B);
+        loaded.TransliterateHotkey ??= new HotkeyBinding(true, true, false, 0x54);
+        loaded.IgnoredWords ??= new List<string>();
+        loaded.CustomReplacements ??= new Dictionary<string, string>();
+
+        // Migrate pre-Caramba v1 config automatically: drop legacy Pause/Break (0x13) default
+        if (!json.Contains("\"ConfigSchemaVersion\"", StringComparison.Ordinal))
+        {
+            migrated = true;
+            loaded.ConfigSchemaVersion = 2;
+            loaded.UseDoubleShiftConvert = true;
+            loaded.UseBothShiftsPause = true;
+            loaded.UseDoubleCtrlConvertLine = true;
+            if (loaded.ConvertLayoutHotkey.VirtualKey == 0x13 &&
+                !loaded.ConvertLayoutHotkey.Ctrl &&
+                !loaded.ConvertLayoutHotkey.Alt &&
+                !loaded.ConvertLayoutHotkey.Shift)
+            {
+                loaded.ConvertLayoutHotkey = new HotkeyBinding();
+            }
+        }
+
+        return loaded;
     }
 
     /// <summary>

@@ -26,6 +26,9 @@ internal static class NativeMethods
     public const uint KEYEVENTF_UNICODE = 0x0004;
     public const uint KEYEVENTF_SCANCODE = 0x0008;
 
+    public const ushort VK_LBUTTON = 0x01;
+    public const ushort VK_RBUTTON = 0x02;
+    public const ushort VK_MBUTTON = 0x04;
     public const ushort VK_BACK = 0x08;
     public const ushort VK_TAB = 0x09;
     public const ushort VK_RETURN = 0x0D;
@@ -230,6 +233,9 @@ internal static class NativeMethods
 
     [DllImport("shell32.dll")]
     public static extern int SHQueryUserNotificationState(out int pquns);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetClipboardSequenceNumber();
 
     public static (IntPtr FocusHwnd, IntPtr TopHwnd, IntPtr ActiveHkl, uint ProcessId) GetActiveFocusAndLayout()
     {

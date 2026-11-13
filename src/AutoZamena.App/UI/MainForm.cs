@@ -35,10 +35,14 @@ internal sealed class MainForm : Form
     private CheckBox _chkFixRollover = null!;
     private CheckBox _chkAutoCapSentence = null!;
     private CheckBox _chkAutoCapFirst = null!;
+    private CheckBox _chkDoubleSpacePeriod = null!;
+    private CheckBox _chkSmartTypography = null!;
     private CheckBox _chkUndoBackspace = null!;
     private CheckBox _chkAutoLearnUndo = null!;
     private ComboBox _cmbLayoutMode = null!;
     private CheckBox _chkSwitchOsLayout = null!;
+    private CheckBox _chkPlaySound = null!;
+    private CheckBox _chkShowLangBadge = null!;
     private CheckBox _chkStartup = null!;
     private CheckBox _chkNotifications = null!;
 
@@ -57,11 +61,15 @@ internal sealed class MainForm : Form
     private TextBox _txtSnippetTrigger = null!;
     private TextBox _txtSnippetReplacement = null!;
 
-    // Tab 4: Hotkeys
+    // Tab 4: Hotkeys (Caramba gestures + customizable bindings)
+    private CheckBox _chkDoubleShiftConvert = null!;
+    private CheckBox _chkBothShiftsPause = null!;
+    private CheckBox _chkSingleShiftSwitch = null!;
+    private CheckBox _chkDoubleCtrlLine = null!;
+    private Label _lblCycleCaseHotkey = null!;
+    private Label _lblTranslitHotkey = null!;
     private Label _lblPauseHotkey = null!;
-    private Button _btnRecordPauseHotkey = null!;
     private Label _lblLayoutHotkey = null!;
-    private Button _btnRecordLayoutHotkey = null!;
 
     // Tab 5: Sandbox & History
     private TextBox _txtSandbox = null!;
@@ -123,12 +131,29 @@ internal sealed class MainForm : Form
             ? "Автозамена активна — печатайте свободно без остановок"
             : "Автозамена на паузе";
 
+        string pauseHint = _config.UseBothShiftsPause
+            ? "Левый+Правый Shift"
+            : _config.PauseToggleHotkey.ToDisplayString();
+        string convertHint = _config.UseDoubleShiftConvert
+            ? "Двойной Shift (слово / выделение)"
+            : _config.ConvertLayoutHotkey.ToDisplayString();
+
         _lblStatusSub.Text =
-            $"Пауза: {_config.PauseToggleHotkey.ToDisplayString()}   |   " +
-            $"Раскладка слова: {_config.ConvertLayoutHotkey.ToDisplayString()}   |   " +
+            $"Перевод раскладки: {convertHint}   |   " +
+            $"Пауза: {pauseHint}   |   " +
             $"Исправлено за сессию: {_totalCorrectionsCount}";
 
         _btnToggleEnabled.Text = enabled ? "Поставить на паузу" : "Включить";
+    }
+
+    public void ReloadFromConfigExternal()
+    {
+        if (InvokeRequired)
+        {
+            BeginInvoke(ReloadFromConfigExternal);
+            return;
+        }
+        LoadValuesFromConfig();
     }
 
     public void AppendHistoryEntry(CorrectionHistoryEntry entry)
@@ -322,17 +347,20 @@ internal sealed class MainForm : Form
         _chkFixRollover = CreateOptionCheck("Склеивать слова, разорванные ранним пробелом (приве т → привет)");
         _chkAutoCapSentence = CreateOptionCheck("Автоматически делать заглавной букву после точки, ! и ? (. на → . На, с защитой т. д. / г.)");
         _chkAutoCapFirst = CreateOptionCheck("Делать заглавной первую букву в самом начале нового ввода");
+        _chkDoubleSpacePeriod = CreateOptionCheck("Ставить точку с пробелом по двойному нажатию пробела — как на смартфоне (привет␣␣ → привет. )");
+        _chkSmartTypography = CreateOptionCheck("Умная типографика: заменять двойной дефис между пробелами на длинное тире ( -- → — )");
         _chkUndoBackspace = CreateOptionCheck("Мгновенный откат автозамены одним нажатием Backspace сразу после пробела");
-        _chkAutoLearnUndo = CreateOptionCheck("Автоматически запоминать отменённые слова в личный список исключений");
+        _chkAutoLearnUndo = CreateOptionCheck("Самообучение (как в Caramba): запоминать отменённые слова в личный список исключений");
 
         flow.Controls.AddRange(new Control[]
         {
             _chkFixTypos, _chkFixDoubleCaps, _chkFixInvertedCaps, _chkFixRollover,
-            _chkAutoCapSentence, _chkAutoCapFirst, _chkUndoBackspace, _chkAutoLearnUndo
+            _chkAutoCapSentence, _chkAutoCapFirst, _chkDoubleSpacePeriod, _chkSmartTypography,
+            _chkUndoBackspace, _chkAutoLearnUndo
         });
 
         // Group: Wrong layout
-        flow.Controls.Add(CreateSectionHeader("Забытая раскладка клавиатуры (ghbdtn ↔ привет)"));
+        flow.Controls.Add(CreateSectionHeader("Забытая раскладка клавиатуры (ghbdtn ↔ привет, пщщпдуюсщь → google.com)"));
 
         var layoutRow = new FlowLayoutPanel
         {
@@ -349,23 +377,26 @@ internal sealed class MainForm : Form
         _cmbLayoutMode = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 430
+            Width = 445
         };
         _cmbLayoutMode.Items.AddRange(new object[]
         {
             "Выключено",
-            "Только вручную по горячей клавише (без автосрабатываний)",
-            "Автоматически при 100% уверенности (слова от 4 букв) + по хоткею"
+            "Только вручную по Двойному Shift / горячей клавише",
+            "Автоматически (слова, фразы z yt pyf., знаки ghbdtn?, адреса) + Двойной Shift"
         });
         _cmbLayoutMode.SelectedIndexChanged += (_, _) => ApplyGeneralControls();
         layoutRow.Controls.Add(_cmbLayoutMode);
         flow.Controls.Add(layoutRow);
 
         _chkSwitchOsLayout = CreateOptionCheck("Переключать системную раскладку активного окна после автоисправления слова");
+        _chkPlaySound = CreateOptionCheck("Лёгкий звуковой щелчок при автоматическом переключении раскладки");
         flow.Controls.Add(_chkSwitchOsLayout);
+        flow.Controls.Add(_chkPlaySound);
 
         // Group: System
-        flow.Controls.Add(CreateSectionHeader("Система"));
+        flow.Controls.Add(CreateSectionHeader("Система и трей"));
+        _chkShowLangBadge = CreateOptionCheck("Показывать активную раскладку (RU / EN) цветом и буквами прямо на иконке в трее");
         _chkStartup = CreateOptionCheck("Запускать AutoZamena автоматически вместе с Windows (в трее)");
         _chkStartup.CheckedChanged += (_, _) =>
         {
@@ -373,6 +404,7 @@ internal sealed class MainForm : Form
             StartupManager.SetStartupEnabled(_chkStartup.Checked);
         };
         _chkNotifications = CreateOptionCheck("Показывать всплывающую подсказку в трее при переключении паузы");
+        flow.Controls.Add(_chkShowLangBadge);
         flow.Controls.Add(_chkStartup);
         flow.Controls.Add(_chkNotifications);
 
@@ -712,8 +744,17 @@ internal sealed class MainForm : Form
             }
         };
 
+        var lblMacroHint = new Label
+        {
+            Text = "Макросы в заменах: {{date}}, {{time}}, {{iso}}, {{clipboard}} и позиция курсора «|»",
+            AutoSize = true,
+            ForeColor = Color.FromArgb(100, 110, 122),
+            Padding = new Padding(0, 6, 14, 0)
+        };
+
         dictToolbar.Controls.Add(btnImportDict);
         dictToolbar.Controls.Add(btnExportDict);
+        dictToolbar.Controls.Add(lblMacroHint);
 
         page.Controls.Add(split);
         page.Controls.Add(dictToolbar);
@@ -722,84 +763,145 @@ internal sealed class MainForm : Form
 
     private TabPage BuildHotkeysTab()
     {
-        var page = new TabPage("Горячие клавиши") { BackColor = Color.White, Padding = new Padding(22) };
+        var page = new TabPage("Горячие клавиши") { BackColor = Color.White, Padding = new Padding(18) };
         var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.TopDown,
-            WrapContents = false
+            WrapContents = false,
+            AutoScroll = true
         };
 
-        flow.Controls.Add(CreateSectionHeader("Глобальное включение / пауза автозамены"));
-        flow.Controls.Add(new Label
+        flow.Controls.Add(CreateSectionHeader("Управление как в Caramba Switcher (без Pause/Break — удобно на ноутбуках и 75%/65% клавиатурах)"));
+
+        _chkDoubleShiftConvert = CreateOptionCheck(
+            "Двойной Shift (2× Shift) — перевести последнее слово, отменить автопереключение или перевести ВЫДЕЛЕННЫЙ текст"
+        );
+        _chkBothShiftsPause = CreateOptionCheck(
+            "Левый Shift + Правый Shift (одновременно) — мгновенно поставить AutoZamena на паузу / включить обратно"
+        );
+        _chkSingleShiftSwitch = CreateOptionCheck(
+            "Одиночный Shift (Single Shift) — переключать активную раскладку клавиатуры одним коротким нажатием Shift"
+        );
+        _chkDoubleCtrlLine = CreateOptionCheck(
+            "Двойной Ctrl (2× Ctrl) — перевести всю набранную фразу на текущей строке без выделения и без буфера обмена"
+        );
+
+        flow.Controls.AddRange(new Control[]
         {
-            Text = "Работает в любом окне и мгновенно ставит AutoZamena на паузу или включает обратно.",
-            AutoSize = true,
-            ForeColor = Color.FromArgb(90, 100, 110),
-            Margin = new Padding(0, 0, 0, 8)
+            _chkDoubleShiftConvert,
+            _chkBothShiftsPause,
+            _chkSingleShiftSwitch,
+            _chkDoubleCtrlLine
         });
 
-        var pauseRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
-        _lblPauseHotkey = new Label
-        {
-            Width = 220,
-            Height = 32,
-            BorderStyle = BorderStyle.FixedSingle,
-            TextAlign = ContentAlignment.MiddleCenter,
-            BackColor = Color.FromArgb(245, 247, 250),
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-            Margin = new Padding(0, 0, 10, 0)
-        };
-        _btnRecordPauseHotkey = new Button { Text = "Задать клавишу…", Width = 150, Height = 32 };
-        _btnRecordPauseHotkey.Click += (_, _) => StartRecordingHotkey(isPauseHotkey: true);
-        var btnResetPause = new Button { Text = "По умолчанию (Ctrl+Alt+Z)", Width = 200, Height = 32 };
-        btnResetPause.Click += (_, _) =>
-        {
-            _hook.HotkeyRecorderInterceptor = null;
-            _config.PauseToggleHotkey = new HotkeyBinding(true, true, false, 0x5A);
-            RefreshHotkeyLabels();
-            SaveAndNotify();
-        };
-        pauseRow.Controls.AddRange(new Control[] { _lblPauseHotkey, _btnRecordPauseHotkey, btnResetPause });
-        flow.Controls.Add(pauseRow);
+        flow.Controls.Add(CreateSectionHeader("Операции с выделенным текстом (регистр КАПСЛОК и транслит)"));
 
-        flow.Controls.Add(new Panel { Height = 20 });
-        flow.Controls.Add(CreateSectionHeader("Принудительная смена раскладки слова или фразы (RU ↔ EN)"));
-        flow.Controls.Add(new Label
-        {
-            Text = "Нажатие клавиши переводит последнее слово (даже из 1–3 букв). С зажатым Shift (например, Shift + Pause/Break) — всю набранную фразу на текущей строке без затрагивания буфера обмена!",
-            AutoSize = true,
-            MaximumSize = new Size(720, 0),
-            ForeColor = Color.FromArgb(90, 100, 110),
-            Margin = new Padding(0, 0, 0, 8)
-        });
+        flow.Controls.Add(BuildCustomBindingRow(
+            "Сменить регистр выделенного текста (строчные → Обычный → ПРОПИСНЫЕ):",
+            out _lblCycleCaseHotkey,
+            onRecord: lbl => StartRecordingBinding(lbl, b => _config.CycleCaseHotkey = b),
+            onClearOrReset: () =>
+            {
+                _config.CycleCaseHotkey = new HotkeyBinding(true, true, false, 0x4B);
+                RefreshHotkeyLabels();
+                SaveAndNotify();
+            },
+            resetText: "Сброс (Ctrl+Alt+K)"
+        ));
 
-        var layoutRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
-        _lblLayoutHotkey = new Label
-        {
-            Width = 220,
-            Height = 32,
-            BorderStyle = BorderStyle.FixedSingle,
-            TextAlign = ContentAlignment.MiddleCenter,
-            BackColor = Color.FromArgb(245, 247, 250),
-            Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-            Margin = new Padding(0, 0, 10, 0)
-        };
-        _btnRecordLayoutHotkey = new Button { Text = "Задать клавишу…", Width = 150, Height = 32 };
-        _btnRecordLayoutHotkey.Click += (_, _) => StartRecordingHotkey(isPauseHotkey: false);
-        var btnResetLayout = new Button { Text = "По умолчанию (Pause/Break)", Width = 200, Height = 32 };
-        btnResetLayout.Click += (_, _) =>
-        {
-            _hook.HotkeyRecorderInterceptor = null;
-            _config.ConvertLayoutHotkey = new HotkeyBinding(false, false, false, 0x13);
-            RefreshHotkeyLabels();
-            SaveAndNotify();
-        };
-        layoutRow.Controls.AddRange(new Control[] { _lblLayoutHotkey, _btnRecordLayoutHotkey, btnResetLayout });
-        flow.Controls.Add(layoutRow);
+        flow.Controls.Add(BuildCustomBindingRow(
+            "Транслитерация выделенного текста (Привет ↔ Privet):",
+            out _lblTranslitHotkey,
+            onRecord: lbl => StartRecordingBinding(lbl, b => _config.TransliterateHotkey = b),
+            onClearOrReset: () =>
+            {
+                _config.TransliterateHotkey = new HotkeyBinding(true, true, false, 0x54);
+                RefreshHotkeyLabels();
+                SaveAndNotify();
+            },
+            resetText: "Сброс (Ctrl+Alt+T)"
+        ));
+
+        flow.Controls.Add(CreateSectionHeader("Дополнительные пользовательские сочетания клавиш"));
+
+        flow.Controls.Add(BuildCustomBindingRow(
+            "Дополнительная клавиша паузы / включения:",
+            out _lblPauseHotkey,
+            onRecord: lbl => StartRecordingBinding(lbl, b => _config.PauseToggleHotkey = b),
+            onClearOrReset: () =>
+            {
+                _config.PauseToggleHotkey = new HotkeyBinding();
+                RefreshHotkeyLabels();
+                RefreshStatusBanner();
+                SaveAndNotify();
+            },
+            resetText: "Очистить"
+        ));
+
+        flow.Controls.Add(BuildCustomBindingRow(
+            "Дополнительная клавиша перевода раскладки слова (необязательно, работает вместе с 2× Shift):",
+            out _lblLayoutHotkey,
+            onRecord: lbl => StartRecordingBinding(lbl, b => _config.ConvertLayoutHotkey = b),
+            onClearOrReset: () =>
+            {
+                _config.ConvertLayoutHotkey = new HotkeyBinding();
+                RefreshHotkeyLabels();
+                RefreshStatusBanner();
+                SaveAndNotify();
+            },
+            resetText: "Очистить"
+        ));
 
         page.Controls.Add(flow);
         return page;
+    }
+
+    private static Control BuildCustomBindingRow(
+        string caption,
+        out Label valueLabel,
+        Action<Label> onRecord,
+        Action onClearOrReset,
+        string resetText)
+    {
+        var container = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
+            Margin = new Padding(0, 2, 0, 6)
+        };
+
+        container.Controls.Add(new Label
+        {
+            Text = caption,
+            AutoSize = true,
+            ForeColor = Color.FromArgb(80, 90, 102),
+            Margin = new Padding(0, 0, 0, 3)
+        });
+
+        var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
+        var lbl = new Label
+        {
+            Width = 210,
+            Height = 30,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleCenter,
+            BackColor = Color.FromArgb(245, 247, 250),
+            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            Margin = new Padding(0, 0, 8, 0)
+        };
+        valueLabel = lbl;
+
+        var btnSet = new Button { Text = "Задать…", Width = 115, Height = 30 };
+        btnSet.Click += (_, _) => onRecord(lbl);
+
+        var btnReset = new Button { Text = resetText, Width = 155, Height = 30 };
+        btnReset.Click += (_, _) => onClearOrReset();
+
+        row.Controls.AddRange(new Control[] { lbl, btnSet, btnReset });
+        container.Controls.Add(row);
+        return container;
     }
 
     private TabPage BuildSandboxHistoryTab()
@@ -809,8 +911,7 @@ internal sealed class MainForm : Form
         var topSandboxPanel = new Panel { Dock = DockStyle.Top, Height = 155 };
         var lblSandbox = new Label
         {
-            Text = "Живая песочница — кликни в поле ниже и попробуй набрать с опечатками " +
-                   "(например: «приходится возврапщатся наза », «ПРивет », «ghbdtn », а затем нажми Backspace для отката):",
+            Text = "Живая песочница — кликни ниже и попробуй: «возврапщатся наза », «z yt pyf. », «пРИВЕТ », двойной пробел или 2× Shift:",
             Dock = DockStyle.Top,
             Height = 42,
             Font = new Font("Segoe UI", 9f, FontStyle.Bold)
@@ -937,10 +1038,19 @@ internal sealed class MainForm : Form
             _chkFixRollover.Checked = s.FixSpacebarRollover;
             _chkAutoCapSentence.Checked = s.AutoCapitalizeAfterSentence;
             _chkAutoCapFirst.Checked = s.AutoCapitalizeFirstWord;
+            _chkDoubleSpacePeriod.Checked = s.DoubleSpacePeriod;
+            _chkSmartTypography.Checked = s.SmartTypography;
             _chkUndoBackspace.Checked = s.UndoOnImmediateBackspace;
             _chkAutoLearnUndo.Checked = s.AutoLearnOnUndo;
             _cmbLayoutMode.SelectedIndex = (int)s.LayoutMode;
             _chkSwitchOsLayout.Checked = s.SwitchSystemLayoutOnAutoFix;
+            _chkPlaySound.Checked = _config.PlaySoundOnAutoSwitch;
+            _chkShowLangBadge.Checked = _config.ShowLanguageBadgeInTray;
+
+            _chkDoubleShiftConvert.Checked = _config.UseDoubleShiftConvert;
+            _chkBothShiftsPause.Checked = _config.UseBothShiftsPause;
+            _chkSingleShiftSwitch.Checked = _config.UseSingleShiftLayoutSwitch;
+            _chkDoubleCtrlLine.Checked = _config.UseDoubleCtrlConvertLine;
 
             _chkStartup.Checked = StartupManager.IsStartupEnabled();
             _chkNotifications.Checked = _config.ShowTrayNotifications;
@@ -973,13 +1083,23 @@ internal sealed class MainForm : Form
         s.FixSpacebarRollover = _chkFixRollover.Checked;
         s.AutoCapitalizeAfterSentence = _chkAutoCapSentence.Checked;
         s.AutoCapitalizeFirstWord = _chkAutoCapFirst.Checked;
+        s.DoubleSpacePeriod = _chkDoubleSpacePeriod.Checked;
+        s.SmartTypography = _chkSmartTypography.Checked;
         s.UndoOnImmediateBackspace = _chkUndoBackspace.Checked;
         s.AutoLearnOnUndo = _chkAutoLearnUndo.Checked;
         s.LayoutMode = (LayoutSwitchMode)Math.Clamp(_cmbLayoutMode.SelectedIndex, 0, 2);
         s.SwitchSystemLayoutOnAutoFix = _chkSwitchOsLayout.Checked;
+
+        _config.PlaySoundOnAutoSwitch = _chkPlaySound.Checked;
+        _config.ShowLanguageBadgeInTray = _chkShowLangBadge.Checked;
+        _config.UseDoubleShiftConvert = _chkDoubleShiftConvert.Checked;
+        _config.UseBothShiftsPause = _chkBothShiftsPause.Checked;
+        _config.UseSingleShiftLayoutSwitch = _chkSingleShiftSwitch.Checked;
+        _config.UseDoubleCtrlConvertLine = _chkDoubleCtrlLine.Checked;
         _config.ShowTrayNotifications = _chkNotifications.Checked;
 
         _engine.Settings = s;
+        RefreshStatusBanner();
         SaveAndNotify();
     }
 
@@ -1053,9 +1173,8 @@ internal sealed class MainForm : Form
         _config.Save();
     }
 
-    private void StartRecordingHotkey(bool isPauseHotkey)
+    private void StartRecordingBinding(Label targetLabel, Action<HotkeyBinding> applyBinding)
     {
-        Label targetLabel = isPauseHotkey ? _lblPauseHotkey : _lblLayoutHotkey;
         targetLabel.Text = "Нажмите клавишу… (Esc — отмена)";
         targetLabel.BackColor = Color.FromArgb(255, 244, 214);
 
@@ -1068,15 +1187,7 @@ internal sealed class MainForm : Form
 
                 if (vk != NativeMethods.VK_ESCAPE)
                 {
-                    var binding = new HotkeyBinding(ctrl, alt, shift, vk);
-                    if (isPauseHotkey)
-                    {
-                        _config.PauseToggleHotkey = binding;
-                    }
-                    else
-                    {
-                        _config.ConvertLayoutHotkey = binding;
-                    }
+                    applyBinding(new HotkeyBinding(ctrl, alt, shift, vk));
                     SaveAndNotify();
                 }
 
@@ -1089,6 +1200,8 @@ internal sealed class MainForm : Form
 
     private void RefreshHotkeyLabels()
     {
+        _lblCycleCaseHotkey.Text = _config.CycleCaseHotkey.ToDisplayString();
+        _lblTranslitHotkey.Text = _config.TransliterateHotkey.ToDisplayString();
         _lblPauseHotkey.Text = _config.PauseToggleHotkey.ToDisplayString();
         _lblLayoutHotkey.Text = _config.ConvertLayoutHotkey.ToDisplayString();
     }
