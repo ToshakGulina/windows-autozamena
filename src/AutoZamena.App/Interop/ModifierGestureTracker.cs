@@ -1,6 +1,6 @@
 namespace AutoZamena.App.Interop;
 
-public enum CarambaGesture
+public enum ModifierGesture
 {
     None = 0,
     SingleShift = 1,
@@ -10,13 +10,13 @@ public enum CarambaGesture
 }
 
 /// <summary>
-/// Deterministic state machine for Caramba Switcher modifier gestures:
-/// - Double Shift (2x Shift): convert last word / cancel auto-switch / convert selected text
-/// - Left Shift + Right Shift: toggle Pause / Resume
-/// - Single Shift (optional): switch active OS layout
-/// - Double Ctrl (2x Ctrl): convert entire typed line without selection
+/// State machine for modifier-only keyboard gestures:
+/// - Double Shift: convert last word, undo recent layout switch, or convert selected text
+/// - Left Shift + Right Shift: toggle global pause
+/// - Single Shift (optional): switch active window keyboard layout
+/// - Double Ctrl: convert the entire typed phrase on the current line
 /// </summary>
-public sealed class CarambaGestureTracker
+public sealed class ModifierGestureTracker
 {
     private const int MaxSingleTapHoldMs = 420;
     private const int MaxDoubleTapGapMs = 430;
@@ -68,7 +68,7 @@ public sealed class CarambaGestureTracker
         _lastPureCtrlUpMs = 0;
     }
 
-    public CarambaGesture ProcessModifierEvent(
+    public ModifierGesture ProcessModifierEvent(
         int vk,
         bool isKeyDown,
         long nowMs,
@@ -83,12 +83,11 @@ public sealed class CarambaGestureTracker
 
         if (!isShiftKey && !isCtrlKey)
         {
-            // Alt or Win pressed -> invalidate any pure Shift / Ctrl tap in progress
             _shiftInvalidatedByOtherAction = true;
             _ctrlInvalidatedByOtherAction = true;
             _lastPureShiftUpMs = 0;
             _lastPureCtrlUpMs = 0;
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
         if (anyAltOrWinDown)
@@ -101,7 +100,6 @@ public sealed class CarambaGestureTracker
 
         if (isShiftKey)
         {
-            // Pressing Shift invalidates any pure Ctrl tap sequence (e.g. Ctrl+Shift OS layout switch!)
             _ctrlInvalidatedByOtherAction = true;
             _lastPureCtrlUpMs = 0;
 
@@ -114,7 +112,6 @@ public sealed class CarambaGestureTracker
             return HandleShift(vk, isKeyDown, nowMs, anyAltOrWinDown, enableDoubleShift, enableBothShiftsPause, enableSingleShift);
         }
 
-        // Ctrl key event: invalidate any pure Shift tap sequence
         _shiftInvalidatedByOtherAction = true;
         _lastPureShiftUpMs = 0;
         if (_lShiftDown || _rShiftDown)
@@ -126,7 +123,7 @@ public sealed class CarambaGestureTracker
         return HandleCtrl(vk, isKeyDown, nowMs, anyAltOrWinDown, enableDoubleCtrl);
     }
 
-    private CarambaGesture HandleShift(
+    private ModifierGesture HandleShift(
         int vk,
         bool isKeyDown,
         long nowMs,
@@ -154,16 +151,14 @@ public sealed class CarambaGestureTracker
                 _bothShiftsTouchedInChord = true;
             }
 
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
-        // KeyUp
         if (vk == NativeMethods.VK_RSHIFT) _rShiftDown = false;
         else _lShiftDown = false;
 
         bool stillHoldingOtherShift = _lShiftDown || _rShiftDown;
 
-        // 1. Left Shift + Right Shift simultaneous chord (fires once when the first of the two Shifts releases cleanly)
         if (_bothShiftsTouchedInChord)
         {
             _lastPureShiftUpMs = 0;
@@ -173,35 +168,34 @@ public sealed class CarambaGestureTracker
                 (nowMs - _shiftChordStartMs) <= 1200)
             {
                 _bothShiftsFiredInChord = true;
-                return CarambaGesture.BothShiftsTogglePause;
+                return ModifierGesture.BothShiftsTogglePause;
             }
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
         if (stillHoldingOtherShift)
         {
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
-        // 2. Single / Double pure Shift tap
         long holdDuration = nowMs - _shiftChordStartMs;
         if (_shiftInvalidatedByOtherAction || holdDuration < 0 || holdDuration > MaxSingleTapHoldMs)
         {
             _lastPureShiftUpMs = 0;
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
         if (enableDoubleShift && _lastPureShiftUpMs > 0 && (nowMs - _lastPureShiftUpMs) <= MaxDoubleTapGapMs)
         {
             _lastPureShiftUpMs = 0;
-            return CarambaGesture.DoubleShift;
+            return ModifierGesture.DoubleShift;
         }
 
         _lastPureShiftUpMs = nowMs;
-        return enableSingleShift ? CarambaGesture.SingleShift : CarambaGesture.None;
+        return enableSingleShift ? ModifierGesture.SingleShift : ModifierGesture.None;
     }
 
-    private CarambaGesture HandleCtrl(
+    private ModifierGesture HandleCtrl(
         int vk,
         bool isKeyDown,
         long nowMs,
@@ -224,7 +218,7 @@ public sealed class CarambaGestureTracker
                 _ctrlInvalidatedByOtherAction = true;
             }
 
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
         if (vk == NativeMethods.VK_RCONTROL) _rCtrlDown = false;
@@ -232,23 +226,23 @@ public sealed class CarambaGestureTracker
 
         if (_lCtrlDown || _rCtrlDown)
         {
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
         long holdDuration = nowMs - _ctrlPressStartMs;
         if (_ctrlInvalidatedByOtherAction || holdDuration < 0 || holdDuration > MaxSingleTapHoldMs)
         {
             _lastPureCtrlUpMs = 0;
-            return CarambaGesture.None;
+            return ModifierGesture.None;
         }
 
         if (enableDoubleCtrl && _lastPureCtrlUpMs > 0 && (nowMs - _lastPureCtrlUpMs) <= MaxDoubleTapGapMs)
         {
             _lastPureCtrlUpMs = 0;
-            return CarambaGesture.DoubleCtrl;
+            return ModifierGesture.DoubleCtrl;
         }
 
         _lastPureCtrlUpMs = nowMs;
-        return CarambaGesture.None;
+        return ModifierGesture.None;
     }
 }

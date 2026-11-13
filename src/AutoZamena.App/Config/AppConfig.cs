@@ -111,15 +111,15 @@ public sealed class AppConfig
     public List<string> BlacklistedProcesses { get; set; } = CreateDefaultBlacklist();
     public List<string> WhitelistedProcesses { get; set; } = CreateDefaultWhitelist();
 
-    // Caramba Switcher style modifier gestures (enabled out-of-the-box, no Pause/Break needed!)
-    public bool UseDoubleShiftConvert { get; set; } = true;       // 2x Shift -> convert last word / cancel auto-switch / convert selected text
-    public bool UseBothShiftsPause { get; set; } = true;          // Left Shift + Right Shift -> toggle Pause / Resume
-    public bool UseSingleShiftLayoutSwitch { get; set; } = false; // 1x Shift -> switch active OS layout (optional Caramba toggle)
-    public bool UseDoubleCtrlConvertLine { get; set; } = true;    // 2x Ctrl -> convert whole typed line without selection
+    // Modifier-key gestures
+    public bool UseDoubleShiftConvert { get; set; } = true;
+    public bool UseBothShiftsPause { get; set; } = true;
+    public bool UseSingleShiftLayoutSwitch { get; set; } = false;
+    public bool UseDoubleCtrlConvertLine { get; set; } = true;
 
-    // Optional regular key bindings (no Pause/Break by default!)
+    // Optional regular key bindings
     public HotkeyBinding PauseToggleHotkey { get; set; } = new(ctrl: true, alt: true, shift: false, virtualKey: 0x5A); // Ctrl+Alt+Z
-    public HotkeyBinding ConvertLayoutHotkey { get; set; } = new(); // Empty by default (Double Shift is primary)
+    public HotkeyBinding ConvertLayoutHotkey { get; set; } = new();
     public HotkeyBinding CycleCaseHotkey { get; set; } = new(ctrl: true, alt: true, shift: false, virtualKey: 0x4B);   // Ctrl+Alt+K
     public HotkeyBinding TransliterateHotkey { get; set; } = new(ctrl: true, alt: true, shift: false, virtualKey: 0x54); // Ctrl+Alt+T
 
@@ -232,7 +232,7 @@ public sealed class AppConfig
         loaded.IgnoredWords ??= new List<string>();
         loaded.CustomReplacements ??= new Dictionary<string, string>();
 
-        // Migrate pre-Caramba v1 config automatically: drop legacy Pause/Break (0x13) default
+        // Migrate v1 config: drop legacy Pause/Break (0x13) default
         if (!json.Contains("\"ConfigSchemaVersion\"", StringComparison.Ordinal))
         {
             migrated = true;

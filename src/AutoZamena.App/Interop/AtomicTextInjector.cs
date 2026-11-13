@@ -6,9 +6,8 @@ using AutoZamena.Core.Models;
 namespace AutoZamena.App.Interop;
 
 /// <summary>
-/// Builds and dispatches atomic Win32 <c>SendInput</c> batches (minimal Backspace diff + UTF-16 KEYEVENTF_UNICODE text + delimiter)
-/// stamped with <see cref="NativeMethods.MagicExtraInfo"/> so our keyboard hook ignores synthetic events.
-/// Dispatches synchronously in &lt; 0.05 ms so fast subsequent physical keystrokes can never overtake the replacement!
+/// Builds and dispatches Win32 <c>SendInput</c> batches (minimal Backspace diff + UTF-16 KEYEVENTF_UNICODE text + delimiter)
+/// stamped with <see cref="NativeMethods.MagicExtraInfo"/> so the keyboard hook ignores synthetic events.
 /// </summary>
 internal static class AtomicTextInjector
 {
@@ -34,7 +33,7 @@ internal static class AtomicTextInjector
             (result.BackspacesCount + result.AppendText.Length + 4) * 2
         );
 
-        // If user accidentally had Caps Lock ON ("пРИВЕТ" -> "Привет"), turn physical Caps Lock OFF in the same atomic batch!
+        // Turn physical Caps Lock off if inverted-caps word was fixed
         if (result.TurnOffCapsLock && (NativeMethods.GetKeyState(NativeMethods.VK_CAPITAL) & 0x0001) != 0)
         {
             AddVkKey(inputs, NativeMethods.VK_CAPITAL, keyUp: false);
@@ -154,7 +153,7 @@ internal static class AtomicTextInjector
         ushort activeLangId = (ushort)((ulong)activeHkl & 0xFFFF);
         ushort activePrimary = (ushort)(activeLangId & 0x03FF);
 
-        // Prefer explicit RU <-> EN toggle when both are installed (Caramba style), falling back to cyclic next HKL
+        // Prefer explicit RU <-> EN toggle when both layouts are installed, falling back to cyclic next HKL
         TargetLanguage desiredOpposite = activePrimary == PrimaryLangRussian
             ? TargetLanguage.English
             : TargetLanguage.Russian;

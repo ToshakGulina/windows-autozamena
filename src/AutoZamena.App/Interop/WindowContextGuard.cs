@@ -78,7 +78,7 @@ public sealed class WindowContextGuard : IDisposable
             NotifyPotentialFocusChange();
         }
 
-        // Own process check: allow ONLY when typing inside the interactive Sandbox textbox!
+        // Own process check: allow only when typing inside the interactive Sandbox textbox.
         if ((int)pid == _ownPid)
         {
             _lastProcessName = "AutoZamena";

@@ -1,4 +1,4 @@
-name: Build, Test & Release Windows Installers
+name: Build, Test & Release
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       publish_release_tag:
-        description: 'Optional release tag to publish/update (e.g. v1.0.0)'
+        description: 'Release tag to publish or update (e.g. v1.0.0)'
         required: false
         default: ''
 
@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   build-test-package:
-    name: Windows (.NET 8 + Inno Setup) Build, Test & Installers
+    name: Windows x64 (.NET 8 + Inno Setup)
     runs-on: windows-latest
 
     steps:
@@ -59,7 +59,7 @@ jobs:
       - name: Build solution (Release)
         run: dotnet build AutoZamena.sln -c Release --no-restore -p:Version=${{ steps.meta.outputs.version }}
 
-      - name: Run xUnit tests & latency benchmarks
+      - name: Run tests
         shell: pwsh
         run: |
           $output = dotnet test tests/AutoZamena.Tests/AutoZamena.Tests.csproj -c Release --no-build --verbosity normal 2>&1 | Out-String
@@ -73,7 +73,7 @@ jobs:
             exit 1
           }
 
-      - name: Publish Standalone Single-File .exe (no .NET install required)
+      - name: Publish self-contained single-file executable
         run: >
           dotnet publish src/AutoZamena.App/AutoZamena.App.csproj
           -c Release
@@ -87,7 +87,7 @@ jobs:
           -p:DebugSymbols=false
           -o publish/standalone
 
-      - name: Publish Lightweight Single-File .exe (.NET 8 Desktop Runtime)
+      - name: Publish framework-dependent single-file executable
         run: >
           dotnet publish src/AutoZamena.App/AutoZamena.App.csproj
           -c Release
@@ -99,7 +99,7 @@ jobs:
           -p:DebugSymbols=false
           -o publish/light
 
-      - name: Build Windows Setup Installers (Inno Setup 6) & Portable ZIP
+      - name: Build installers and portable archive
         shell: pwsh
         run: |
           $ver = "${{ steps.meta.outputs.version }}"
@@ -113,7 +113,7 @@ jobs:
             throw "ISCC.exe not found after Inno Setup check."
           }
 
-          # 1. Full Offline Windows Installer (Recommended — works on any Windows 10/11 x64 without .NET)
+          # 1. Self-contained installer
           & $iscc `
             "/DMyAppVersion=$ver" `
             "/DPublishDir=..\publish\standalone" `
@@ -121,7 +121,7 @@ jobs:
             installer\AutoZamena.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed for standalone installer" }
 
-          # 2. Lightweight Windows Installer (requires .NET 8 Desktop Runtime)
+          # 2. Framework-dependent installer (.NET 8 Desktop Runtime)
           & $iscc `
             "/DMyAppVersion=$ver" `
             "/DPublishDir=..\publish\light" `
@@ -130,26 +130,28 @@ jobs:
             installer\AutoZamena.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed for light installer" }
 
-          # 3. Portable ZIP Archive (with pre-created portable.flag)
+          # 3. Portable ZIP archive
           New-Item -ItemType Directory -Force -Path staging/AutoZamena-Portable | Out-Null
           Copy-Item publish/standalone/AutoZamena.exe staging/AutoZamena-Portable/AutoZamena.exe
           Copy-Item LICENSE staging/AutoZamena-Portable/LICENSE.txt
           New-Item -ItemType File -Force -Path staging/AutoZamena-Portable/portable.flag | Out-Null
           @"
-          AutoZamena v$ver — Портативная версия (без установки)
-          ======================================================
-          1. Запустите AutoZamena.exe — в системном трее (рядом с часами) появится значок RU / EN.
-          2. Благодаря файлу portable.flag все настройки и ваш личный словарь сохраняются прямо в этой папке (config.json).
-          3. Основные жесты (в стиле Caramba Switcher):
-             - Двойной Shift (2x Shift): перевести последнее слово / отменить автопереключение / перевести выделенный текст
-             - Левый Shift + Правый Shift: пауза / включение
-             - Двойной Ctrl (2x Ctrl): перевести всю текущую строку
-             - Ctrl + Alt + K / Ctrl + Alt + T: регистр / транслитерация выделенного текста
+          AutoZamena $ver — портативная сборка
+          ------------------------------------
+          Запустите AutoZamena.exe. Значок программы появится в области уведомлений (трее).
+          Наличие файла portable.flag включает хранение настроек и словаря в текущей папке (config.json).
+
+          Клавиши по умолчанию:
+            Двойной Shift              перевод раскладки последнего слова, выделенного текста или отмена переключения
+            Левый + Правый Shift       пауза и возобновление работы
+            Двойной Ctrl               перевод раскладки всей текущей строки
+            Ctrl + Alt + K             смена регистра выделенного текста
+            Ctrl + Alt + T             транслитерация выделенного текста
           "@ | Set-Content -Path staging/AutoZamena-Portable/ПРОЧТИ_МЕНЯ.txt -Encoding UTF8
 
           Compress-Archive -Path staging/AutoZamena-Portable/* -DestinationPath artifacts/AutoZamena-Portable-win-x64.zip -Force
 
-          # 4. Standalone single-file .exe & SHA-256 checksums
+          # 4. Standalone executable & SHA-256 checksums
           Copy-Item publish/standalone/AutoZamena.exe artifacts/AutoZamena-Standalone-win-x64.exe
 
           Push-Location artifacts
@@ -162,46 +164,39 @@ jobs:
           Get-Content SHA256SUMS.txt
           Pop-Location
 
-      - name: Upload Windows Installers & Portable Package Artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: AutoZamena-Windows-Installers-x64
           path: artifacts/*
           if-no-files-found: error
 
-      - name: Publish or Update GitHub Release
+      - name: Publish or update GitHub Release
         if: steps.meta.outputs.release_tag != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.meta.outputs.release_tag }}"
-          $ver = "${{ steps.meta.outputs.version }}"
 
           $notes = @"
-          ## 📦 Скачать AutoZamena $tag для Windows 10 / 11 (x64)
+          ### Загрузки для Windows 10 / 11 (x64)
 
-          | Пакет | Описание | Кому подойдёт |
-          |---|---|---|
-          | 🏆 **[AutoZamena-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Setup-win-x64.exe)** | **Полный установщик Windows** *(всё включено, не требует .NET)* | **Рекомендуется для всех пользователей** — установка в 2 клика без прав администратора, ярлык в меню «Пуск» и автозапуск |
-          | 🪶 **[AutoZamena-Light-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Light-Setup-win-x64.exe)** | Облегчённый установщик (~2–3 МБ) | Если в системе уже установлен `.NET 8 Desktop Runtime (x64)` |
-          | 💼 **[AutoZamena-Portable-win-x64.zip](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Portable-win-x64.zip)** | Портативный архив с `portable.flag` | Работа с флешки или из любой папки без установки в систему |
-          | ⚡ **[AutoZamena-Standalone-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Standalone-win-x64.exe)** | Один автономный `.exe`-файл | Прямой запуск одним файлом |
+          | Файл | Описание |
+          |---|---|
+          | **[AutoZamena-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Setup-win-x64.exe)** | Полный установщик (автономный, не требует установки .NET и прав администратора) |
+          | [AutoZamena-Light-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Light-Setup-win-x64.exe) | Облегчённый установщик (требуется установленный `.NET 8 Desktop Runtime x64`) |
+          | [AutoZamena-Portable-win-x64.zip](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Portable-win-x64.zip) | Портативный архив с `portable.flag` (хранит `config.json` рядом с `AutoZamena.exe`) |
+          | [AutoZamena-Standalone-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Standalone-win-x64.exe) | Автономный исполняемый файл без установщика |
 
-          ---
+          ### Основные возможности
+          - Исправление опечаток при наборе с учётом геометрии раскладок ЙЦУКЕН и QWERTY, транспозиций и контекста биграмм.
+          - Автоматическое и ручное переключение раскладки `RU <-> EN` для отдельных слов, ретроактивных фраз, знаков препинания и доменных имён.
+          - Управление клавишами-модификаторами: `2x Shift` (перевод последнего слова, выделенного фрагмента или отмена переключения), `Левый + Правый Shift` (пауза), `2x Ctrl` (перевод строки), опциональный `1x Shift` (смена раскладки).
+          - Исправление случайного `Caps Lock` и двух заглавных букв в начале слова, склейка слов после сдвинутого пробела, пользовательский словарь исключений и текстовых замен.
+          - Автоматическое отключение в IDE, терминалах, полноэкранных 3D-приложениях и полях ввода паролей. Полностью локальная работа без сетевых обращений.
 
-          ### ✨ Главные возможности релиза $tag
-          - **Мгновенное исправление опечаток на лету (`< 1 мс`)** по физическому расстоянию клавиш **ЙЦУКЕН / QWERTY**, таймингам нажатий и `75 000+` биграммам (`возврапщатся наза ` → **`возвращаться назад `**).
-          - **Управление как в Caramba Switcher (без `Pause/Break`):**
-            - **`2× Shift`** — перевод последнего слова, отмена автопереключения (с самообучением!) или умный перевод выделенного текста с сохранением URL и буфера обмена;
-            - **`Левый Shift + Правый Shift`** — мгновенная пауза / включение;
-            - **`1× Shift`** *(опционально в трее)* — смена системной раскладки;
-            - **`2× Ctrl`** — перевод всей текущей строки.
-          - **Умная раскладка (`RU ↔ EN`):** ретроактивные фразы (`z yt pyf. ` → `я не знаю `), знаки препинания (`ghbdtn? vbh ` → `привет, мир `, `rfr ltkf& ` → `как дела? `) и домены (`пщщпдуюсщь ` → `google.com `, `цццюнфюкг ` → `www.ya.ru `).
-          - **Смартфонная механика и сниппеты:** автоотключение случайного `Caps Lock` (`пРИВЕТ` → `Привет`), склейка раннего пробела (`приве т ` → `привет `), двойной пробел → `". "`, длинное тире ` -- ` → ` — `, макросы `{{date}}`, `{{clipboard}}` и курсор `|`.
-          - **100% офлайн и безопасно:** ноль сетевых соединений, автоотключение в 3D-играх и полях ввода паролей.
-
-          > Контрольные суммы SHA-256 приложены в файле `SHA256SUMS.txt`.
+          Контрольные суммы SHA-256 приведены в файле `SHA256SUMS.txt`.
           "@
           $notes | Set-Content -Path release_notes.md -Encoding UTF8
 
@@ -215,12 +210,12 @@ jobs:
           if ($releaseExists) {
             gh release upload $tag @files --clobber
             if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-            gh release edit $tag --title "AutoZamena $tag — Умная автозамена и переключатель раскладки" --notes-file release_notes.md
+            gh release edit $tag --title "AutoZamena $tag" --notes-file release_notes.md
             if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
           } else {
             gh release create $tag @files `
               --target "${{ github.sha }}" `
-              --title "AutoZamena $tag — Умная автозамена и переключатель раскладки" `
+              --title "AutoZamena $tag" `
               --notes-file release_notes.md
             if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
           }

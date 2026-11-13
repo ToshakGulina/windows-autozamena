@@ -6,8 +6,7 @@ using AutoZamena.Core.Models;
 namespace AutoZamena.App.UI;
 
 /// <summary>
-/// Synthesizes two ultra-short, unobtrusive 20ms soft cosine-enveloped clicks in memory
-/// (higher pitch for Russian, lower pitch for English — Caramba / Punto style audio cue without loud OS chimes).
+/// Synthesizes short 22 ms cosine-enveloped PCM clicks in memory (distinct pitch for RU and EN).
 /// </summary>
 internal static class SoftSwitchSoundPlayer
 {
