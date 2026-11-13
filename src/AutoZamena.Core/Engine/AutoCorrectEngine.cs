@@ -1139,10 +1139,10 @@ public sealed class AutoCorrectEngine
                     parts[1],
                     ReadOnlySpan<KeyStrokeEvent>.Empty,
                     null,
-                    SensitivityLevel.Conservative,
+                    Settings.Sensitivity,
                     isMidSentenceCapitalized: false
                 );
-                if (cand1.HasValue && cand1.Value.EditCost <= 0.90f && cand1.Value.Score >= 3.8f)
+                if (cand1.HasValue && cand1.Value.EditCost <= 1.05f && cand1.Value.Score >= 2.20f)
                 {
                     string rebuilt = parts[0] + "-" + cand1.Value.Word;
                     string casedRebuilt = TokenGuards.ApplyCasing(rebuilt, casing, shouldCapSentence && leadingQuote.Length == 0);
@@ -1167,10 +1167,10 @@ public sealed class AutoCorrectEngine
                     parts[0],
                     ReadOnlySpan<KeyStrokeEvent>.Empty,
                     null,
-                    SensitivityLevel.Conservative,
+                    Settings.Sensitivity,
                     isMidSentenceCapitalized: false
                 );
-                if (cand0.HasValue && cand0.Value.EditCost <= 0.90f && cand0.Value.Score >= 3.8f)
+                if (cand0.HasValue && cand0.Value.EditCost <= 1.05f && cand0.Value.Score >= 2.20f)
                 {
                     string rebuilt = cand0.Value.Word + "-" + parts[1];
                     string casedRebuilt = TokenGuards.ApplyCasing(rebuilt, casing, shouldCapSentence && leadingQuote.Length == 0);

@@ -286,6 +286,13 @@ public static class NoisyChannelScorer
     private static bool CharsEqualOrYo(char a, char b) =>
         a == b || (a == 'е' && b == 'ё') || (a == 'ё' && b == 'е');
 
+    private static bool IsRussianPhoneticConfusionPair(char a, char b) =>
+        (a == 'а' && b == 'о') || (a == 'о' && b == 'а') ||
+        (a == 'е' && b == 'и') || (a == 'и' && b == 'е') ||
+        (a == 'д' && b == 'т') || (a == 'т' && b == 'д') ||
+        (a == 'з' && b == 'с') || (a == 'с' && b == 'з') ||
+        (a == 'б' && b == 'п') || (a == 'п' && b == 'б');
+
     private static float GetSubstitutionCost(char typedChar, char candChar, bool isFirstChar)
     {
         if (typedChar == candChar)
@@ -300,6 +307,7 @@ public static class NoisyChannelScorer
 
         float dist = KeyboardGeometry.GetKeyDistance(typedChar, candChar);
         float baseCost = dist <= 1.38f ? 0.65f
+                       : (!isFirstChar && IsRussianPhoneticConfusionPair(typedChar, candChar)) ? 0.85f
                        : dist <= 2.15f ? 1.05f
                        : 1.55f;
 
