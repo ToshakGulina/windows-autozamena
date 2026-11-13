@@ -2176,8 +2176,17 @@ public sealed class AutoCorrectEngine
             }
         }
 
+        bool hasEnContextOrChain =
+            hasPrevEnContext ||
+            (_recentSpaceTokens.Count > 0 && CanChainShortRuTokenToEn(_recentSpaceTokens[^1]));
+
+        if (!hasEnContextOrChain && string.Equals(cyrSpan, "афк", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         float minEnZipf = cyrSpan.Length == 3
-            ? (hasPrevEnContext ? 4.20f : (ContainsRussianVowel(cyrSpan.ToLowerInvariant()) ? 5.55f : 5.10f))
+            ? (hasEnContextOrChain ? 4.20f : (ContainsRussianVowel(cyrSpan.ToLowerInvariant()) ? 5.45f : 5.10f))
             : 3.30f;
 
         if ((_lexicon.TryGetEnWord(mappedEnLower, out EnWordEntry enTarget) && enTarget.Zipf >= minEnZipf) ||
