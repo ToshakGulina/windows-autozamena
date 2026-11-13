@@ -260,8 +260,8 @@ public static class NoisyChannelScorer
                     CharsEqualOrYo(tc, cand[j - 2]))
                 {
                     bool fastRollover = i - 1 < events.Length &&
-                                        (events[i - 1].OverlapWithPrev || events[i - 1].DeltaPrevMs <= 45);
-                    float transCost = fastRollover ? 0.40f : 0.58f;
+                                        (events[i - 1].OverlapWithPrev || (events[i - 1].DeltaPrevMs > 0 && events[i - 1].DeltaPrevMs <= 50));
+                    float transCost = fastRollover ? 0.36f : 0.45f;
                     float vTrans = prev2[j - 2] + transCost;
                     if (vTrans < best) best = vTrans;
                 }
