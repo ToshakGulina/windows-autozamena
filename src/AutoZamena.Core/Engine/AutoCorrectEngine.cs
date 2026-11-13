@@ -1537,10 +1537,12 @@ public sealed class AutoCorrectEngine
                 string reason = "Забытая раскладка EN→RU";
 
                 float minRuZipf = rawSpan.Length == 3 ? 5.0f : 3.10f;
-                if (validCasing && _lexicon.TryGetRuWord(mappedRuLower, out RuWordEntry ruTarget) && ruTarget.Zipf >= minRuZipf)
+                if (validCasing &&
+                    ((_lexicon.TryGetRuWord(mappedRuLower, out RuWordEntry ruTarget) && ruTarget.Zipf >= minRuZipf) ||
+                     (rawSpan.Length >= 4 && TokenGuards.IsPureCyrillicWord(mappedRuLower) && _lexicon.IsProtectedWord(mappedRuLower))))
                 {
                     resolvedRuLower = mappedRuLower;
-                    resolvedConfidence = ruTarget.Zipf;
+                    resolvedConfidence = ruTarget.Zipf > 0 ? ruTarget.Zipf : 4.5;
                 }
                 else if (validCasing && Settings.FixTypos && rawSpan.Length >= 4 &&
                          _lexicon.TryGetExplicitFix(mappedRuLower, out string? explicitRu))
@@ -1560,10 +1562,10 @@ public sealed class AutoCorrectEngine
                         mappedRuLower,
                         mappedEvents,
                         _prevRuWord,
-                        SensitivityLevel.Conservative,
+                        Settings.Sensitivity,
                         isMidSentenceCapitalized: false
                     );
-                    if (ruTypoCand.HasValue && ruTypoCand.Value.EditCost <= 0.95f && ruTypoCand.Value.Score >= 1.25f)
+                    if (ruTypoCand.HasValue && ruTypoCand.Value.EditCost <= 0.95f && ruTypoCand.Value.Score >= 1.15f)
                     {
                         resolvedRuLower = ruTypoCand.Value.Word;
                         resolvedConfidence = ruTypoCand.Value.Score;

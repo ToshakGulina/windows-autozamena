@@ -96,8 +96,9 @@ public sealed class MechanicsAndLayoutTests
     [InlineData("xnjnj ", "что-то ")]
     [InlineData("djpdhfgofncz ", "возвращаться ")]
     [InlineData("руддщ ", "hello ")]
-    [InlineData("иусефыу ", "because ")]
-    [InlineData("hellp ", "hello ")]
+    [InlineData("иусгфыу ", "because ")]
+    [InlineData("hellp ", "help ")]
+    [InlineData("helol ", "hello ")]
     public void WrongKeyboardLayout_AutoFixesExactAndTypoWordsAnd3CharPunctuationTokens(string input, string expected)
     {
         var engine = new AutoCorrectEngine();
