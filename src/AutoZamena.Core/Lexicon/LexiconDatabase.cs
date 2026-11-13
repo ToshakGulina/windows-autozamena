@@ -84,13 +84,15 @@ public sealed class LexiconDatabase
         _ruSymSpell = new PrefixSymSpellIndex(
             _ruEntries.Length,
             i => (_ruEntries[i].Flags & RuGrammarFlags.CandidateTarget) != 0,
-            i => NormalizeRuKey(_ruEntries[i].Word)
+            i => NormalizeRuKey(_ruEntries[i].Word),
+            i => _ruEntries[i].Zipf
         );
 
         _enSymSpell = new PrefixSymSpellIndex(
             _enEntries.Length,
             i => _enEntries[i].IsCandidateTarget,
-            i => _enEntries[i].Word
+            i => _enEntries[i].Word,
+            i => _enEntries[i].Zipf
         );
     }
 
@@ -294,6 +296,13 @@ public sealed class LexiconDatabase
 
     public EnWordEntry GetEnEntryByIndex(int index) => _enEntries[index];
 
+    public float GetRuSurfaceBigramBoost(in RuWordEntry prevWord, in RuWordEntry nextWord)
+    {
+        return _ruSurfaceBigrams.TryGetValue(PackPair((uint)prevWord.Index, (uint)nextWord.Index), out float surf)
+            ? surf
+            : 0f;
+    }
+
     public float GetRuContextBoost(in RuWordEntry prevWord, in RuWordEntry candidate)
     {
         float boost = 0f;
@@ -387,10 +396,15 @@ public sealed class LexiconDatabase
         private readonly List<int>[] _buckets;
         private readonly Dictionary<string, List<int>> _deleteMap;
 
-        public PrefixSymSpellIndex(int itemCount, Func<int, bool> includePredicate, Func<int, string> wordSelector)
+        public PrefixSymSpellIndex(
+            int itemCount,
+            Func<int, bool> includePredicate,
+            Func<int, string> wordSelector,
+            Func<int, float> zipfSelector)
         {
             var prefixToBucket = new Dictionary<string, int>(32768, StringComparer.Ordinal);
             var bucketLists = new List<List<int>>(32768);
+            var bucketMaxZipf = new List<float>(32768);
 
             for (int i = 0; i < itemCount; i++)
             {
@@ -401,15 +415,30 @@ public sealed class LexiconDatabase
 
                 string w = wordSelector(i);
                 string pfx = w.Length <= PrefixLength ? w : w[..PrefixLength];
+                float z = zipfSelector(i);
 
                 if (!prefixToBucket.TryGetValue(pfx, out int bucketId))
                 {
                     bucketId = bucketLists.Count;
                     prefixToBucket[pfx] = bucketId;
                     bucketLists.Add(new List<int>(2));
+                    bucketMaxZipf.Add(z);
+                }
+                else if (z > bucketMaxZipf[bucketId])
+                {
+                    bucketMaxZipf[bucketId] = z;
                 }
 
                 bucketLists[bucketId].Add(i);
+            }
+
+            // Sort each bucket in descending Zipf order so branch-and-bound finds high-Zipf winners immediately
+            for (int b = 0; b < bucketLists.Count; b++)
+            {
+                if (bucketLists[b].Count > 1)
+                {
+                    bucketLists[b].Sort((a, c) => zipfSelector(c).CompareTo(zipfSelector(a)));
+                }
             }
 
             _buckets = bucketLists.ToArray();
@@ -432,6 +461,14 @@ public sealed class LexiconDatabase
                         _deleteMap[del] = list;
                     }
                     list.Add(bucketId);
+                }
+            }
+
+            foreach (var list in _deleteMap.Values)
+            {
+                if (list.Count > 1)
+                {
+                    list.Sort((a, c) => bucketMaxZipf[c].CompareTo(bucketMaxZipf[a]));
                 }
             }
         }

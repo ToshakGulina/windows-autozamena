@@ -152,4 +152,43 @@ public sealed class RealWorldTyposTests
 
         Assert.True(chordCost < slowCost, $"Expected chordCost ({chordCost}) < slowCost ({slowCost})");
     }
+
+    [Theory]
+    [InlineData("тчо ", "что ")]
+    [InlineData("чтщ ", "что ")]
+    [InlineData("шде ", "где ")]
+    [InlineData("кще ", "еще ")]
+    [InlineData("евсь ", "весь ")]
+    [InlineData("кмпьютер ", "компьютер ")]
+    [InlineData("комьютер ", "компьютер ")]
+    [InlineData("докумнт ", "документ ")]
+    [InlineData("тестировшик ", "тестировщик ")]
+    [InlineData("инжинер ", "инженер ")]
+    [InlineData("извени ", "извини ")]
+    [InlineData("извените ", "извините ")]
+    [InlineData("малако ", "молоко ")]
+    [InlineData("харашо ", "хорошо ")]
+    [InlineData("сичас ", "сейчас ")]
+    [InlineData("настройкех ", "настройках ")]
+    [InlineData("исправляит ", "исправляет ")]
+    [InlineData("переключатиль ", "переключатель ")]
+    [InlineData("пользоватиль ", "пользователь ")]
+    [InlineData("документацея ", "документация ")]
+    [InlineData("конфигурацея ", "конфигурация ")]
+    public void ExtendedFirstCharTranspositionsModernWordsAndLongInflections_AreFixed(string input, string expected)
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal(expected, engine.SimulateText(input));
+    }
+
+    [Theory]
+    [InlineData("сво ")]
+    [InlineData("кпд ")]
+    [InlineData("мгу ")]
+    [InlineData("ивановскийх ")]
+    public void ShortAbbreviationsAndLowFrequencyTwoEditNoise_StayUntouched(string validOrAmbiguous)
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal(validOrAmbiguous, engine.SimulateText(validOrAmbiguous));
+    }
 }
