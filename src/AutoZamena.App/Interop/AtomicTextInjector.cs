@@ -16,6 +16,10 @@ internal static class AtomicTextInjector
 
     private static IntPtr[] _cachedHkls = Array.Empty<IntPtr>();
     private static long _lastHklRefreshTick;
+    private static long _lastAutoLayoutSwitchTick;
+
+    public static bool WasRecentAutoLayoutSwitch(long nowTick) =>
+        _lastAutoLayoutSwitchTick > 0 && (nowTick - _lastAutoLayoutSwitchTick) is >= 0 and <= 650;
 
     public static void Dispatch(CorrectionResult result)
     {
@@ -125,17 +129,27 @@ internal static class AtomicTextInjector
 
     public static void SendCtrlShortcut(ushort asciiUpperVk)
     {
-        var inputs = new List<NativeMethods.INPUT>(12);
+        var inputs = new List<NativeMethods.INPUT>(16);
 
         bool lShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_LSHIFT) & 0x8000) != 0;
         bool rShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RSHIFT) & 0x8000) != 0;
+        bool genShiftDown = !lShiftDown && !rShiftDown && (NativeMethods.GetAsyncKeyState(NativeMethods.VK_SHIFT) & 0x8000) != 0;
+
         bool lAltDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_LMENU) & 0x8000) != 0;
         bool rAltDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RMENU) & 0x8000) != 0;
+        bool genAltDown = !lAltDown && !rAltDown && (NativeMethods.GetAsyncKeyState(NativeMethods.VK_MENU) & 0x8000) != 0;
+
+        bool rCtrlDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RCONTROL) & 0x8000) != 0;
 
         if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: true);
         if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: true);
+        if (genShiftDown) AddVkKey(inputs, NativeMethods.VK_SHIFT, keyUp: true);
+
         if (lAltDown) AddVkKey(inputs, NativeMethods.VK_LMENU, keyUp: true);
         if (rAltDown) AddVkKey(inputs, NativeMethods.VK_RMENU, keyUp: true);
+        if (genAltDown) AddVkKey(inputs, NativeMethods.VK_MENU, keyUp: true);
+
+        if (rCtrlDown) AddVkKey(inputs, NativeMethods.VK_RCONTROL, keyUp: true, extended: true);
 
         AddVkKey(inputs, NativeMethods.VK_LCONTROL, keyUp: false);
         AddVkKey(inputs, asciiUpperVk, keyUp: false);
@@ -297,6 +311,7 @@ internal static class AtomicTextInjector
             return;
         }
 
+        _lastAutoLayoutSwitchTick = Environment.TickCount64;
         (IntPtr focusHwnd, IntPtr topHwnd, _, _) = NativeMethods.GetActiveFocusAndLayout();
         PostLayoutChangeRequest(topHwnd, focusHwnd, matchedHkl);
     }

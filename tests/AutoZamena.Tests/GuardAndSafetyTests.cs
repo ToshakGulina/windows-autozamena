@@ -15,9 +15,15 @@ public sealed class GuardAndSafetyTests
     {
         var engine = new AutoCorrectEngine();
         const string slangText =
-            "спс мб кст хз пж го норм щас деплой пуллреквест коммит гитхаб телеграм дискорд катка имба ";
+            "спс мб кст хз пж го прив гоу бро афк вк тг лс смержи инфа скрин пруф созвон дедлайн " +
+            "норм щас деплой пуллреквест коммит гитхаб телеграм дискорд катка имба " +
+            "envs args chown grep diff auth pipx pls thx idk btw ";
 
         Assert.Equal(slangText, engine.SimulateText(slangText));
+
+        // Meanwhile, English phrase "so far " typed in RU layout ("ыщ афк ") still switches cleanly!
+        engine.ResetContext();
+        Assert.Equal("so far ", engine.SimulateText("ыщ афк "));
     }
 
     [Fact]

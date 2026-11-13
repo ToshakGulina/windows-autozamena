@@ -18,24 +18,30 @@ public static class RunTogetherSplitter
 {
     private static readonly HashSet<string> RuCompoundLeftStems = new(StringComparer.Ordinal)
     {
-        "авто", "мото", "вело", "теле", "видео", "аудио", "фото", "радио", "кино", "медиа",
-        "микро", "макро", "мульти", "супер", "гипер", "ультра", "мини", "макси", "моно", "поли",
-        "стерео", "аэро", "гидро", "термо", "электро", "энерго", "тепло", "водо", "газо", "звуко",
-        "свето", "цвето", "само", "взаимо", "много", "мало", "высоко", "низко", "широко", "узко",
-        "глубоко", "дально", "близко", "быстро", "долго", "ново", "старо", "средне", "верхне",
-        "нижне", "выше", "ниже", "чисто", "светло", "темно", "ярко", "слабо", "сильно", "громко",
-        "тихо", "прямо", "равно", "одно", "двух", "трех", "трёх", "четырех", "четырёх", "пяти",
-        "шести", "семи", "восьми", "девяти", "десяти", "сто", "пол", "полу", "сверх", "меж",
-        "спец", "глав", "гос", "соц", "фин", "тех", "мед", "юр", "хоз", "строй", "торг", "пром",
-        "кибер", "онлайн", "офлайн", "оффлайн", "веб", "топ", "пост", "пре", "анти", "контр", "псевдо"
+        "авто", "мото", "вело", "теле", "видео", "аудио", "фото", "радио", "кино", "медиа", "авиа", "космо",
+        "микро", "макро", "мульти", "супер", "гипер", "ультра", "мини", "макси", "моно", "поли", "кило", "мега", "гига", "нано",
+        "стерео", "аэро", "гидро", "термо", "электро", "энерго", "тепло", "водо", "газо", "нефте", "звуко", "свето", "цвето",
+        "само", "взаимо", "много", "мало", "высоко", "низко", "широко", "узко", "глубоко", "дально", "близко", "быстро", "долго",
+        "ново", "старо", "средне", "верхне", "нижне", "выше", "ниже", "чисто", "светло", "темно", "ярко", "слабо", "сильно", "громко",
+        "тихо", "прямо", "равно", "разно", "полно", "пусто", "крупно", "мелко", "тонко", "толсто", "остро", "твердо", "твёрдо", "мягко",
+        "строго", "свеже", "дорого", "дешево", "дёшево", "коротко", "редко", "часто", "густо", "бело", "черно", "чёрно", "красно",
+        "одно", "двух", "трех", "трёх", "четырех", "четырёх", "пяти", "шести", "семи", "восьми", "девяти", "десяти", "сто",
+        "пол", "полу", "сверх", "меж", "спец", "глав", "гос", "соц", "фин", "тех", "мед", "юр", "хоз", "строй", "торг", "пром",
+        "кибер", "нейро", "крипто", "био", "гео", "эко", "нео", "зоо", "психо", "социо", "инфо", "евро",
+        "онлайн", "офлайн", "оффлайн", "веб", "интернет", "бизнес", "пресс", "шоу", "стрим", "чат", "спам", "код", "баг", "хот",
+        "топ", "пост", "пре", "анти", "контр", "псевдо", "квази", "прото", "архи", "лже", "недо", "пере",
+        "время", "место", "себе", "мимо", "ума", "чудо", "горе", "шеф"
     };
 
     private static readonly HashSet<string> RuSeparateAfterNe = new(StringComparer.Ordinal)
     {
         "знаю", "знаешь", "знает", "знаем", "знаете", "знают", "знал", "знала", "знали",
+        "понимаю", "понимаешь", "понимает", "понимаем", "понимаете", "понимают", "понял", "поняла", "поняли",
         "могу", "можешь", "может", "можем", "можете", "могут", "мог", "могла", "могло", "могли",
         "хочу", "хочешь", "хочет", "хотим", "хотите", "хотят", "хотел", "хотела", "хотели",
         "буду", "будешь", "будет", "будем", "будете", "будут", "был", "была", "было", "были",
+        "думаю", "думаешь", "думает", "вижу", "видишь", "видит", "помню", "помнишь", "помнит",
+        "слышу", "люблю", "смотрю", "говорю",
         "надо", "нужно", "можно", "жаль", "пора", "нельзя", "есть", "нет", "стоит", "стоило",
         "рад", "рада", "рады", "готов", "готова", "готовы", "должен", "должна", "должно", "должны",
         "обязан", "обязана", "обязаны", "уверен", "уверена", "уверены", "согласен", "согласна", "согласны",
@@ -92,7 +98,31 @@ public static class RunTogetherSplitter
         "ward", "wise", "like", "less", "full", "ness", "ship", "hood", "ment", "able", "line", "base",
         "name", "word", "page", "site", "room", "house", "shop", "store", "book", "box", "board", "ware",
         "flow", "set", "lock", "key", "code", "file", "type", "view", "host", "space", "place", "side",
-        "light", "man", "men", "woman", "women", "boy", "girl", "body", "thing", "where", "one", "screen", "stroke"
+        "light", "man", "men", "woman", "women", "boy", "girl", "body", "thing", "where", "one", "screen", "stroke",
+        "bar", "tip", "fix", "list", "shot", "log", "map", "stream", "area", "path", "hook", "hooks", "keys",
+        "stack", "limit", "tree", "self", "selves", "ever", "soever"
+    };
+
+    private static readonly HashSet<string> EnParticleCompoundRight = new(StringComparer.Ordinal)
+    {
+        "out", "down", "back", "up", "off", "through", "around", "away", "over", "under", "in", "on"
+    };
+
+    private static readonly HashSet<string> EnClosedFunctionWords = new(StringComparer.Ordinal)
+    {
+        "the", "and", "for", "you", "your", "yours", "are", "was", "were", "have", "has", "had",
+        "will", "would", "could", "should", "shall", "must", "may", "might", "can", "not", "but",
+        "this", "that", "these", "those", "they", "them", "their", "theirs", "what", "when", "which",
+        "while", "because", "since", "until", "from", "with", "about", "into", "onto", "upon",
+        "very", "just", "really", "also", "only", "still", "even", "much", "many", "more", "most",
+        "some", "such", "than", "then", "there", "here", "where", "who", "whom", "whose", "why", "how",
+        "all", "both", "each", "few", "other", "another", "please", "thank", "thanks", "hello", "sorry",
+        "maybe", "perhaps", "always", "never", "often", "again", "already", "almost", "enough", "quite",
+        "rather", "pretty", "too", "yes", "yeah", "nope", "okay", "sure", "well", "now", "today",
+        "tonight", "tomorrow", "yesterday", "let", "lets", "make", "made", "want", "wants", "wanted",
+        "need", "needs", "needed", "know", "knows", "knew", "think", "thinks", "thought", "see", "saw",
+        "seen", "get", "got", "give", "gave", "take", "took", "come", "came", "going", "went", "gone",
+        "say", "says", "said", "tell", "told", "ask", "asked", "good", "great", "nice", "best", "better"
     };
 
     private static readonly HashSet<string> EnShortPrepositions = new(StringComparer.Ordinal)
@@ -103,7 +133,7 @@ public static class RunTogetherSplitter
     private static readonly HashSet<string> EnCommonShortTargets = new(StringComparer.Ordinal)
     {
         "the", "you", "not", "all", "one", "our", "out", "him", "her", "his", "its", "now", "how", "who",
-        "this", "that", "them", "they", "what", "when", "here", "there", "your", "have", "will", "been"
+        "this", "that", "them", "they", "what", "when", "here", "there", "your", "have", "will", "been", "far"
     };
 
     public static SplitCandidate? TrySplitRussian(
@@ -411,6 +441,11 @@ public static class RunTogetherSplitter
                 continue;
             }
 
+            if (right == "жить" && left.EndsWith('р'))
+            {
+                continue;
+            }
+
             float minZ = MathF.Min(el.Zipf, er.Zipf);
             float avgZ = (el.Zipf + er.Zipf) * 0.5f;
             float pairSc = avgZ + fullBi * 0.85f + prevBoost;
@@ -419,7 +454,7 @@ public static class RunTogetherSplitter
                 ? minZ >= 2.15f
                 : (left.Length == 3 || right.Length == 3)
                     ? (minZ >= 3.35f && pairSc >= 4.10f)
-                    : (minZ >= 2.20f && pairSc >= 3.25f);
+                    : (minZ >= 2.20f && pairSc >= 3.45f);
 
             if (twoFullOk && (!best.HasValue || pairSc > best.Value.Score))
             {
@@ -525,6 +560,19 @@ public static class RunTogetherSplitter
                 continue;
             }
 
+            if (left == "good" && right == "night")
+            {
+                continue;
+            }
+
+            bool hasContraction = leftExpanded.Contains('\'');
+            if (EnParticleCompoundRight.Contains(right) &&
+                !EnClosedFunctionWords.Contains(left) &&
+                !hasContraction)
+            {
+                continue;
+            }
+
             float bi = hasEl ? lexicon.GetEnContextBoost(in el, in er) : 0.85f;
             float prevBoost = prevWord.HasValue && hasEl ? lexicon.GetEnContextBoost(prevWord.Value, in el) * 0.30f : 0f;
 
@@ -550,7 +598,9 @@ public static class RunTogetherSplitter
                 bool shortOk =
                     bi >= 0.70f ||
                     (EnShortPrepositions.Contains(left) && EnCommonShortTargets.Contains(right)) ||
-                    (right is "be" or "to" or "in" or "on" or "it" or "me" or "us" && leftZipf >= 5.20f && bi >= 0.55f);
+                    (right is "be" or "to" or "in" or "on" or "it" or "me" or "us" or "is" &&
+                     leftZipf >= 5.20f &&
+                     (bi >= 0.55f || left is "this" or "that" or "what" or "want" or "need" or "going" or "have" or "used" or "let" or "tell" or "give" or "send"));
 
                 if (shortOk && leftZipf >= 4.20f && er.Zipf >= 4.20f)
                 {
@@ -566,10 +616,12 @@ public static class RunTogetherSplitter
             float minZ = MathF.Min(leftZipf, er.Zipf);
             float avgZ = (leftZipf + er.Zipf) * 0.5f;
             float pairSc = avgZ + bi * 0.85f + prevBoost;
+            bool hasClosedFunc = hasContraction || EnClosedFunctionWords.Contains(left) || EnClosedFunctionWords.Contains(right);
 
+            // Without open-pair bigram evidence, never split two open-class English content words ("screenshot", "frontend", "roadmap")
             bool fullOk = bi >= 0.55f
                 ? minZ >= 3.20f
-                : (minZ >= 3.85f && pairSc >= 4.75f);
+                : (hasClosedFunc && minZ >= 3.85f && pairSc >= 4.70f);
 
             if (fullOk && (!best.HasValue || pairSc > best.Value.Score))
             {
@@ -592,7 +644,8 @@ public static class RunTogetherSplitter
             "ться", "тся", "лся", "лась", "лось", "лись",
             "ешь", "ёшь", "ете", "ёте", "ишь", "ите", "ут", "ют", "ат", "ят",
             "ала", "яла", "ила", "ела", "ула", "ало", "яло", "ило", "ело",
-            "али", "яли", "или", "ели", "ули", "ыли", "ть", "ти", "чь"
+            "али", "яли", "или", "ели", "ули", "ыли", "ть", "ти", "чь",
+            "ижу", "ышу", "блю", "трю", "орю", "мню"
         ];
 
         for (int i = 0; i < unambiguousVerbSuffixes.Length; i++)
@@ -602,6 +655,16 @@ public static class RunTogetherSplitter
             {
                 return true;
             }
+        }
+
+        if (w.Length >= 5 &&
+            w is not ("краю" or "раю" or "чаю" or "маю") &&
+            (w.EndsWith("аю", StringComparison.Ordinal) ||
+             w.EndsWith("яю", StringComparison.Ordinal) ||
+             w.EndsWith("ую", StringComparison.Ordinal) ||
+             w.EndsWith("юю", StringComparison.Ordinal)))
+        {
+            return true;
         }
 
         if (w.Length >= 4 &&
