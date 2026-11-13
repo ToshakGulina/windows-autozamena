@@ -21,7 +21,7 @@ internal static class Program
 
         if (!isFirstInstance)
         {
-            // Signal the running tray instance to bring its settings window to the front!
+            // Bring the running instance's settings window to the front
             try
             {
                 using EventWaitHandle activateSignal = EventWaitHandle.OpenExisting(ActivateWindowEventName);
@@ -30,7 +30,7 @@ internal static class Program
             catch
             {
                 MessageBox.Show(
-                    "AutoZamena уже запущена и работает в системном трее (рядом с часами).",
+                    "AutoZamena уже запущена в области уведомлений.",
                     "AutoZamena",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information

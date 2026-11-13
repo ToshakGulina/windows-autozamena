@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generates src/AutoZamena.App/Assets/app.ico (multi-resolution 32-bit RGBA Windows icon)."""
+"""Generates src/AutoZamena.App/Assets/app.ico (multi-size 32-bit RGBA Windows icon)."""
 
 import math
 import os
@@ -33,7 +33,7 @@ def sd_segment(px: float, py: float, ax: float, ay: float, bx: float, by: float)
 
 
 def render_icon_rgba(size: int) -> bytes:
-    """Renders the AutoZamena emerald/cyan squircle + crisp 'A' + subtle spark badge in [-1, 1] coords."""
+    """Renders a matte graphite keycap with a clean white 'A' and subtle blue underline."""
     aa = 2.0 / size
     out = bytearray(size * size * 4)
 
@@ -42,66 +42,64 @@ def render_icon_rgba(size: int) -> bytes:
         for x in range(size):
             nx = ((x + 0.5) / size) * 2.0 - 1.0
 
-            # 1. Outer rounded squircle
-            d_box = sd_rounded_box(nx, ny, 0.88, 0.88, 0.40)
-            alpha_box = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, d_box)
-
-            if alpha_box <= 0.001:
+            # Outer keycap base skirt
+            d_outer = sd_rounded_box(nx, ny, 0.88, 0.88, 0.24)
+            alpha = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, d_outer)
+            if alpha <= 0.001:
                 continue
 
-            # Diagonal rich emerald -> deep teal gradient
-            grad_t = clamp01((nx * 0.55 + ny * 0.85 + 1.0) * 0.5)
-            r = 18.0 * (1.0 - grad_t) + 9.0 * grad_t
-            g = 184.0 * (1.0 - grad_t) + 118.0 * grad_t
-            b = 118.0 * (1.0 - grad_t) + 109.0 * grad_t
+            # Matte dark base (#1C2026)
+            r, g, b = 28.0, 32.0, 38.0
 
-            # Subtle top inner highlight rim
-            d_inner = abs(d_box + 0.035) - 0.015
-            rim = (1.0 - smoothstep(0.0, aa * 1.4, d_inner)) * clamp01((-ny + 0.3) * 0.7) * 0.28
-            r += (255.0 - r) * rim
-            g += (255.0 - g) * rim
-            b += (255.0 - b) * rim
+            # Inner raised keycap dish (#2B313B -> #252A33)
+            d_cap = sd_rounded_box(nx, ny + 0.04, 0.76, 0.73, 0.18)
+            cap_a = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, d_cap)
+            if cap_a > 0.0:
+                shade = clamp01((ny + 0.8) * 0.6)
+                cr = 46.0 * (1.0 - shade) + 37.0 * shade
+                cg = 52.0 * (1.0 - shade) + 42.0 * shade
+                cb = 62.0 * (1.0 - shade) + 51.0 * shade
+                r = r * (1.0 - cap_a) + cr * cap_a
+                g = g * (1.0 - cap_a) + cg * cap_a
+                b = b * (1.0 - cap_a) + cb * cap_a
 
-            # 2. Bold geometric letter 'А' (centered slightly left-up to balance corner pill)
-            stroke_w = 0.112 if size >= 32 else 0.128
-            ax_top, ay_top = -0.02, -0.46
-            ax_l, ay_l = -0.39, 0.43
-            ax_r, ay_r = 0.35, 0.43
-            bar_y = 0.13
+            # Subtle 1px top keycap edge highlight
+            d_edge = abs(d_cap + 0.015) - 0.012
+            edge_a = (1.0 - smoothstep(0.0, aa * 1.2, d_edge)) * clamp01(-ny) * 0.18
+            r += (255.0 - r) * edge_a
+            g += (255.0 - g) * edge_a
+            b += (255.0 - b) * edge_a
 
-            d_leg_l = sd_segment(nx, ny, ax_top, ay_top, ax_l, ay_l) - stroke_w
-            d_leg_r = sd_segment(nx, ny, ax_top, ay_top, ax_r, ay_r) - stroke_w
-            d_cross = sd_segment(nx, ny, -0.24, bar_y, 0.20, bar_y) - (stroke_w * 0.84)
-            d_letter = min(d_leg_l, d_leg_r, d_cross)
+            # Clean centered 'A' glyph
+            stroke_w = 0.092 if size >= 32 else 0.112
+            top_x, top_y = 0.0, -0.45
+            left_x, left_y = -0.31, 0.27
+            right_x, right_y = 0.31, 0.27
+            bar_y = 0.04
 
-            # Soft drop shadow under 'A'
-            d_leg_ls = sd_segment(nx, ny - 0.045, ax_top, ay_top, ax_l, ay_l) - stroke_w
-            d_leg_rs = sd_segment(nx, ny - 0.045, ax_top, ay_top, ax_r, ay_r) - stroke_w
-            d_cross_s = sd_segment(nx, ny - 0.045, -0.24, bar_y, 0.20, bar_y) - (stroke_w * 0.84)
-            shadow_a = (1.0 - smoothstep(-aa, aa * 2.4, min(d_leg_ls, d_leg_rs, d_cross_s))) * 0.24
-            r *= (1.0 - shadow_a)
-            g *= (1.0 - shadow_a)
-            b *= (1.0 - shadow_a)
+            d_l = sd_segment(nx, ny, top_x, top_y, left_x, left_y) - stroke_w
+            d_r = sd_segment(nx, ny, top_x, top_y, right_x, right_y) - stroke_w
+            d_b = sd_segment(nx, ny, -0.19, bar_y, 0.19, bar_y) - (stroke_w * 0.84)
+            glyph_a = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, min(d_l, d_r, d_b))
 
-            letter_a = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, d_letter)
-            r = r * (1.0 - letter_a) + 255.0 * letter_a
-            g = g * (1.0 - letter_a) + 255.0 * letter_a
-            b = b * (1.0 - letter_a) + 255.0 * letter_a
+            r = r * (1.0 - glyph_a) + 244.0 * glyph_a
+            g = g * (1.0 - glyph_a) + 246.0 * glyph_a
+            b = b * (1.0 - glyph_a) + 249.0 * glyph_a
 
-            # 3. Crisp electric-sky accent dot / lightning spark in top-right (RU <-> EN auto-switch cue)
-            dx_sp, dy_sp = nx - 0.45, ny - (-0.45)
-            d_spark = math.hypot(dx_sp, dy_sp) - (0.145 if size >= 32 else 0.165)
-            spark_a = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, d_spark)
-            if spark_a > 0.0:
-                r = r * (1.0 - spark_a) + 125.0 * spark_a
-                g = g * (1.0 - spark_a) + 249.0 * spark_a
-                b = b * (1.0 - spark_a) + 255.0 * spark_a
+            # Thin understated indicator bar beneath glyph (#4B9EFF)
+            bar_h = 0.046 if size >= 32 else 0.062
+            d_uline = sd_rounded_box(nx, ny - 0.49, 0.28, bar_h, bar_h)
+            uline_a = 1.0 - smoothstep(-aa * 0.85, aa * 0.85, d_uline)
+            if uline_a > 0.0:
+                r = r * (1.0 - uline_a) + 75.0 * uline_a
+                g = g * (1.0 - uline_a) + 158.0 * uline_a
+                b = b * (1.0 - uline_a) + 255.0 * uline_a
 
             idx = (y * size + x) * 4
             out[idx] = int(round(clamp01(r / 255.0) * 255.0))
             out[idx + 1] = int(round(clamp01(g / 255.0) * 255.0))
             out[idx + 2] = int(round(clamp01(b / 255.0) * 255.0))
-            out[idx + 3] = int(round(alpha_box * 255.0))
+            out[idx + 3] = int(round(alpha * 255.0))
 
     return bytes(out)
 
@@ -114,7 +112,7 @@ def encode_png_rgba(width: int, height: int, rgba: bytes) -> bytes:
     raw_rows = bytearray()
     stride = width * 4
     for y in range(height):
-        raw_rows.append(0)  # Filter type 0 (None)
+        raw_rows.append(0)
         raw_rows.extend(rgba[y * stride : (y + 1) * stride])
 
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
@@ -156,6 +154,5 @@ def build_ico(ico_path: str, preview_png_path: str | None = None) -> None:
 if __name__ == "__main__":
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ico_out = os.path.join(repo_root, "src", "AutoZamena.App", "Assets", "app.ico")
-    preview_tmp = "/tmp/autozamena_icon_preview.png"
-    build_ico(ico_out, preview_tmp)
+    build_ico(ico_out, "/tmp/autozamena_icon_preview.png")
     print(f"Generated {ico_out} ({os.path.getsize(ico_out)} bytes)")

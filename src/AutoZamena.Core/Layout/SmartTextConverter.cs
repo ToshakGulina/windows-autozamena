@@ -8,11 +8,11 @@ using AutoZamena.Core.Models;
 namespace AutoZamena.Core.Layout;
 
 /// <summary>
-/// Smart whole-word text converters for selected text and snippets:
-/// - RU &lt;-&gt; EN layout conversion with whole-word punctuation &amp; URL preservation (Caramba / Mahou style)
-/// - Case cycling (КАПСЛОК -&gt; Обычный регистр -&gt; строчные -&gt; ПРОПИСНЫЕ)
+/// Text transformation utilities for selected text and user snippets:
+/// - RU &lt;-&gt; EN whole-word layout conversion with punctuation and URL preservation
+/// - 3-step case cycling (lowercase -&gt; Sentence case -&gt; UPPERCASE)
 /// - Bidirectional RU &lt;-&gt; Latin transliteration
-/// - Dynamic snippet macro expansion ({{date}}, {{time}}, {{iso}}, {{clipboard}}, | cursor marker)
+/// - Dynamic snippet template expansion ({{date}}, {{time}}, {{iso}}, {{clipboard}}, | cursor position)
 /// </summary>
 public static class SmartTextConverter
 {
@@ -234,62 +234,8 @@ public static class SmartTextConverter
     }
 
     /// <summary>
-    /// Cycles text casing:
-    /// - ALL CAPS / Inverted / Sticky Caps -&gt; Sentence case ("ПРИВЕТ МИР" -&gt; "Привет мир")
-    /// - lowercase -&gt; Title / Sentence case ("привет мир" -&gt; "Привет мир")
-    /// - Sentence / Title case -&gt; ALL CAPS ("Привет мир" -&gt; "ПРИВЕТ МИР")
-    /// </summary>
-    public static string CycleCase(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return text;
-        }
-
-        bool hasUpper = false;
-        bool hasLower = false;
-        foreach (char c in text)
-        {
-            if (char.IsLetter(c))
-            {
-                if (char.IsUpper(c)) hasUpper = true;
-                else if (char.IsLower(c)) hasLower = true;
-            }
-        }
-
-        if (!hasUpper && !hasLower)
-        {
-            return text;
-        }
-
-        // 1. ALL CAPS -> Sentence case (or lowercase if single letter)
-        if (hasUpper && !hasLower)
-        {
-            return ToSentenceCase(text);
-        }
-
-        // 2. all lowercase -> Sentence case
-        if (hasLower && !hasUpper)
-        {
-            return ToSentenceCase(text);
-        }
-
-        // 3. Mixed case: if it's inverted caps ("пРИВЕТ") or sticky caps ("ПРивет"), normalize to Sentence case first;
-        //    if it's already clean Sentence case ("Привет мир"), cycle to UPPERCASE ("ПРИВЕТ МИР") -> next press will go lowercase via step 4!
-        string sentence = ToSentenceCase(text);
-        if (!string.Equals(text, sentence, StringComparison.Ordinal))
-        {
-            return sentence;
-        }
-
-        // Wait: to make a clean 3-state cycle (lowercase -> Sentence case -> UPPERCASE -> lowercase):
-        // Check if first letter is upper and rest are lower (Sentence case) -> go UPPERCASE; Wait: then UPPERCASE goes to lowercase!
-        return text.ToUpperInvariant();
-    }
-
-    /// <summary>
-    /// Deterministic 3-step case cycle: lowercase -&gt; Sentence case -&gt; UPPERCASE -&gt; lowercase
-    /// (with abnormal caps like пРИВЕТ / ПРивет normalizing straight to Sentence case).
+    /// Cycles text casing in three steps: UPPERCASE -&gt; lowercase -&gt; Sentence case -&gt; UPPERCASE
+    /// (inverted or sticky caps normalize to Sentence case first).
     /// </summary>
     public static string CycleCaseThreeWay(string text)
     {
@@ -429,7 +375,7 @@ public static class SmartTextConverter
 
     private static string ConvertChunkEnToRu(string chunk, LexiconDatabase lexicon)
     {
-        // Peel outer non-letter wrappers like ( ... ) or !
+        // Peel outer non-letter wrappers like ( ... ) or quotes.
         int left = 0;
         while (left < chunk.Length && chunk[left] is '(' or '«')
         {
@@ -462,9 +408,9 @@ public static class SmartTextConverter
         }
 
         // Check trailing punctuation nuance on core:
-        // 1) '?', '/', '&' at end of EN->RU word map via KeyboardGeometry to ',', '.', '?' automatically!
+        // 1) '?', '/', '&' at end of EN->RU word map via KeyboardGeometry to ',', '.', '?' automatically.
         // 2) ',' or '.' at end of EN->RU word could be EITHER a Russian letter ('б'/'ю' as in "[kt,"="хлеб", "pyf."="знаю")
-        //    OR literal punctuation typed visually ("Ghbdtn," -> "Привет,", "vbh." -> "мир.")!
+        //    OR literal punctuation typed visually ("Ghbdtn," -> "Привет,", "vbh." -> "мир.").
         if (core.Length >= 2 && core[^1] is ',' or '.')
         {
             char trail = core[^1];
@@ -505,7 +451,7 @@ public static class SmartTextConverter
     {
         // Note: on RU layout, ',' is Shift+/ ('?' on EN), while literal ',' may also have been typed visually.
         // If chunk ends with ',' and nextNonSpace starts with a lowercase Cyrillic letter ("Руддщ, цщкдв"),
-        // keep ',' as ',' rather than turning mid-sentence comma into '?'!
+        // keep ',' as ',' rather than turning mid-sentence comma into '?'.
         if (chunk.Length >= 2 && chunk[^1] == ',' &&
             nextNonSpace.Length > 0 && KeyboardGeometry.IsCyrillicLetter(nextNonSpace[0]) && char.IsLower(nextNonSpace[0]))
         {

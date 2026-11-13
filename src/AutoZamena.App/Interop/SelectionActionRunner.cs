@@ -16,9 +16,8 @@ public enum SelectionTransformKind
 }
 
 /// <summary>
-/// Executes selected-text transformations (Caramba-style Double Shift layout convert, Case cycle, Transliteration)
-/// on a dedicated background STA thread so the low-level keyboard hook never blocks and user clipboard contents
-/// are backed up and restored cleanly.
+/// Runs selected-text transformations (layout conversion, case cycling, transliteration)
+/// on a background STA thread while backing up and restoring clipboard contents.
 /// </summary>
 internal static class SelectionActionRunner
 {

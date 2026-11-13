@@ -49,7 +49,7 @@ public sealed class GuardAndSafetyTests
 
         Assert.Equal(technical, engine.SimulateText(technical));
 
-        // Meanwhile, an actual sentence ending with a period + space fixes the typo AND capitalizes the next word!
+        // Meanwhile, an actual sentence ending with a period + space fixes the typo AND capitalizes the next word.
         engine.ResetContext();
         Assert.Equal("привет. На связи ", engine.SimulateText("привте. на связи "));
     }

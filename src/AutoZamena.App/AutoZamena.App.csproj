@@ -16,10 +16,10 @@
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <Authors>ToshakGulina</Authors>
-    <Company>AutoZamena Project</Company>
+    <Company>ToshakGulina</Company>
     <Product>AutoZamena</Product>
-    <Description>Умная автозамена опечаток на лету и автопереключатель раскладки RU ↔ EN для Windows</Description>
-    <Copyright>Copyright © 2026 ToshakGulina (MIT License)</Copyright>
+    <Description>Автозамена опечаток и переключение раскладки клавиатуры для Windows</Description>
+    <Copyright>Copyright © 2026 ToshakGulina</Copyright>
     <RepositoryUrl>https://github.com/ToshakGulina/windows-autozamena</RepositoryUrl>
   </PropertyGroup>
 

@@ -97,7 +97,7 @@ public sealed class AutoCorrectEngine
     public bool HasLiveConvertibleToken => _rawSinceWhitespace.Count > 0 || _lastCompletedForHotkey.HasValue;
 
     /// <summary>
-    /// Called when the user clicks the mouse or jumps the caret into existing text (Caramba-style edit guard).
+    /// Called when the user clicks the mouse or jumps the caret into existing text.
     /// Clears stale word state and suppresses auto-correction on a partial mid-word edit until the next delimiter.
     /// </summary>
     public void NotifyPointerOrFocusChanged(bool suppressFragmentUntilDelimiter = true)
@@ -191,7 +191,7 @@ public sealed class AutoCorrectEngine
         }
 
         // Opening bracket/typographic quote at the very start of a token: "(привте)", "«привте»", "“hello”"
-        // Note: ASCII '"' and '\'' and '[' stay in _rawSinceWhitespace because on US QWERTY they map to 'Э'/'э'/'х'!
+        // Note: ASCII '"' and '\'' and '[' stay in _rawSinceWhitespace because on US QWERTY they map to 'Э'/'э'/'х'.
         if (_rawSinceWhitespace.Count == 0 && c is '(' or '«' or '„' or '“' or '—' or '–')
         {
             _sawSentencePunctWithoutSpace = false;
@@ -213,7 +213,7 @@ public sealed class AutoCorrectEngine
         }
 
         // Defer '.' and ':' inside _rawSinceWhitespace so domains, filenames, emails, URLs & code
-        // (andriod.com, serega.ivanov@gmail.com, програма.exe, https://...) are NEVER prematurely altered on '.'!
+        // (andriod.com, serega.ivanov@gmail.com, програма.exe, https://...) are never prematurely altered on '.'.
         if (c is '.' or ':')
         {
             _sawSentencePunctWithoutSpace = false;
@@ -257,7 +257,7 @@ public sealed class AutoCorrectEngine
         _sawSentencePunctWithoutSpace = false;
         _rawSinceWhitespace.Add(ev);
 
-        // If a previous char in this token was a deferred '/', '&', or '?' ("path/sub", "a&b"), mark compound!
+        // If a previous char in this token was a deferred '/', '&', or '?' ("path/sub", "a&b"), mark compound.
         if (HasInternalLayoutPunctBeforeLast(_rawSinceWhitespace))
         {
             _wordEvents.Clear();
@@ -267,7 +267,7 @@ public sealed class AutoCorrectEngine
 
         if (char.IsLetterOrDigit(c) || c == '-')
         {
-            // Only append to _wordEvents if we haven't already seen an internal '.' or ':' in this token!
+            // Only append to _wordEvents if we haven't already seen an internal '.' or ':' in this token.
             // If we HAVE seen '.' or ':' before this letter/digit (e.g. "andriod.c" or "програма.e"),
             // clear _wordEvents so only TryAutoFixWrongLayout ("k.lb" -> "люди") can inspect rawSpan.
             if (HasInternalDotOrColonBeforeLast(_rawSinceWhitespace))
@@ -304,7 +304,7 @@ public sealed class AutoCorrectEngine
     /// </summary>
     public CorrectionResult OnWhitespace(char whitespaceChar = ' ', long timestampMs = 0)
     {
-        // Smartphone / Punto style Double-Space -> ". " + Sentence Auto-Cap!
+        // Double-space -> ". " with next-word capitalization
         if (whitespaceChar == ' ' &&
             _rawSinceWhitespace.Count == 0 &&
             _canDoubleSpacePeriod &&
@@ -411,7 +411,7 @@ public sealed class AutoCorrectEngine
 
     /// <summary>
     /// Handles physical Backspace key. If the immediately preceding keystroke triggered an auto-correction,
-    /// returns an <see cref="CorrectionKind.UndoRestore"/> diff restoring the user's exact typed characters!
+    /// returns an <see cref="CorrectionKind.UndoRestore"/> diff restoring the user's exact typed characters.
     /// </summary>
     public CorrectionResult OnBackspace()
     {
@@ -496,18 +496,14 @@ public sealed class AutoCorrectEngine
     }
 
     /// <summary>
-    /// Explicitly converts the layout (RU &lt;-&gt; EN) of the currently buffered word or the just-finished word
-    /// when the user presses Double Shift (Caramba style) or a custom layout hotkey.
-    /// Also reverses a just-applied automatic WrongLayout switch (including multi-word retroactive phrases)
-    /// and self-learns the word into UserDictionary!
+    /// Converts the layout (RU &lt;-&gt; EN) of the currently buffered word or the just-finished word,
+    /// or reverts a just-applied automatic layout switch and records the word in the ignore list.
     /// </summary>
     public CorrectionResult ConvertLastWordLayoutByHotkey()
     {
         _canDoubleSpacePeriod = false;
 
-        // Case 0 (Caramba Double-Shift Cancel + Self-Learning):
-        // If an automatic WrongLayout switch JUST fired on the preceding delimiter, Double Shift cancels it cleanly
-        // (even for multi-word retroactive phrases like "z yt pyf. ") and learns the token into exceptions!
+        // If an automatic WrongLayout switch fired on the preceding delimiter, revert it and learn the word
         if (_undoSnapshot.HasValue && _undoSnapshot.Value.Kind == CorrectionKind.WrongLayout)
         {
             UndoSnapshot snap = _undoSnapshot.Value;
@@ -611,8 +607,8 @@ public sealed class AutoCorrectEngine
     }
 
     /// <summary>
-    /// Converts the ENTIRE uninterrupted sequence of space-separated words typed on the current line
-    /// (e.g. "ye lf " -&gt; "ну да " via Shift + Pause/Break) without ever touching the system clipboard!
+    /// Converts the uninterrupted sequence of space-separated words typed on the current line
+    /// without touching the system clipboard.
     /// </summary>
     public CorrectionResult ConvertPhraseLayoutByHotkey()
     {
@@ -637,7 +633,7 @@ public sealed class AutoCorrectEngine
             return CorrectionResult.NoChange;
         }
 
-        // Update _recentSpaceTokens so pressing Shift+Pause/Break again toggles the entire phrase right back!
+        // Update _recentSpaceTokens so repeating the hotkey toggles the phrase back
         for (int i = 0; i < _recentSpaceTokens.Count; i++)
         {
             RecentSpaceToken tok = _recentSpaceTokens[i];
@@ -763,8 +759,7 @@ public sealed class AutoCorrectEngine
             return CorrectionResult.NoChange;
         }
 
-        // Caramba-style edit guard: if the user clicked into the middle of an existing word/sentence,
-        // never auto-correct the partial fragment before the first delimiter!
+        // Mid-word edit guard: skip auto-correction on the partial fragment typed immediately after a mouse click
         if (_suppressFragmentCorrectionUntilDelimiter)
         {
             _suppressFragmentCorrectionUntilDelimiter = false;
@@ -785,7 +780,7 @@ public sealed class AutoCorrectEngine
         RuWordEntry? savedPrevRu = _prevRuWord;
         EnWordEntry? savedPrevEn = _prevEnWord;
 
-        // 0. If the user previously undid a word and now confirms that exact word with a delimiter -> learn it!
+        // 0. If the user previously undid a word and now confirms that exact word with a delimiter -> learn it.
         if (_pendingLearnAfterUndo.Remove(rawSpan))
         {
             _userDictionary.AddIgnoredWord(rawSpan);
@@ -902,7 +897,7 @@ public sealed class AutoCorrectEngine
             }
         }
 
-        // If rawSpan ended with a deferred '?' that did NOT auto-convert as EN->RU layout, honor '?' as sentence end!
+        // If rawSpan ended with a deferred '?' that did NOT auto-convert as EN->RU layout, honor '?' as sentence end.
         if (rawSpan[^1] == '?')
         {
             _afterSentenceEndPunct = delimiter is ' ' or '\t';
@@ -939,7 +934,7 @@ public sealed class AutoCorrectEngine
             workingSpan = workingSpan[..punctTailStart];
         }
 
-        // If workingSpan doesn't match clean wordToken (e.g. internal dot "andriod.local" or "user.name"), leave 100% untouched!
+        // If workingSpan doesn't match clean wordToken (e.g. internal dot "andriod.local" or "user.name"), leave 100% untouched.
         if (string.IsNullOrEmpty(wordToken) || !workingSpan.SequenceEqual(wordToken.AsSpan()))
         {
             _afterSentenceEndPunct = false;
@@ -1116,7 +1111,7 @@ public sealed class AutoCorrectEngine
 
         bool invertedCaps = Settings.FixInvertedCaps && casing == CasingKind.InvertedCapsLock;
 
-        // Expressive stretched words ("ммм", "дааа", "нееет", "ооочень", "nooo", "hmmm"): never "fix" letters!
+        // Expressive stretched words ("ммм", "дааа", "нееет", "ооочень", "nooo", "hmmm"): never "fix" letters.
         if (TokenGuards.HasExpressiveLetterRepeat(wordToken))
         {
             if ((invertedCaps || (shouldCapSentence && casing == CasingKind.Lower)) && leadingQuote.Length == 0)
@@ -1362,7 +1357,7 @@ public sealed class AutoCorrectEngine
             return CorrectionResult.NoChange;
         }
 
-        // 7. Unknown word: run Noisy-Channel Physical + Timing + Context Typo Scorer!
+        // 7. Unknown word: run Noisy-Channel Physical + Timing + Context Typo Scorer.
         if (Settings.FixTypos && wordToken.Length >= 3)
         {
             bool isMidSentenceCap = casing == CasingKind.Capitalized &&
@@ -1867,7 +1862,7 @@ public sealed class AutoCorrectEngine
             return null;
         }
 
-        // Direction 2a (Caramba / Punto classic): Domain/URL typed in RU layout ("пщщпдуюсщь" -> "google.com", "цццюнфтучюкг" -> "www.yandex.ru")
+        // Domain/URL typed in RU layout ("пщщпдуюсщь" -> "google.com", "цццюнфюкг" -> "www.ya.ru")
         if (rawSpan.Length >= 5 && !_lexicon.IsKnownRuWord(rawLower) &&
             SmartTextConverter.TryConvertRuTypedDomainToEn(rawSpan, out string domainEn))
         {
@@ -2495,7 +2490,7 @@ public sealed class AutoCorrectEngine
             return false;
         }
 
-        // Trailing '?' on US QWERTY (Shift + /) is Russian ',' when attached to an EN-typed Russian word ("ghbdtn? vbh")!
+        // Trailing '?' on US QWERTY (Shift + /) is Russian ',' when attached to an EN-typed Russian word ("ghbdtn? vbh").
         if (c == '?')
         {
             if (_rawSinceWhitespace.Count < 3)
@@ -2579,7 +2574,7 @@ public sealed class AutoCorrectEngine
             return false;
         }
 
-        // Note: _rawSinceWhitespace already contains the newly appended '/' or '&' as its last element!
+        // Note: _rawSinceWhitespace already contains the newly appended '/' or '&' as its last element.
         int prefixLen = _rawSinceWhitespace.Count - 1;
         if (prefixLen < 3)
         {

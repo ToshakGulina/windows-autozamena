@@ -100,7 +100,7 @@ public sealed class RealWorldTyposTests
     {
         var engine = new AutoCorrectEngine();
 
-        // "наза" -> "назад": common prefix "наза" (4 chars) => ZERO backspaces!
+        // "наза" -> "назад": common prefix "наза" (4 chars) => zero backspaces.
         foreach (char c in "наза")
         {
             engine.OnCharacter(new KeyStrokeEvent(c));

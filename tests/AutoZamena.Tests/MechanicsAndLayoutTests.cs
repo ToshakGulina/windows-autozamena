@@ -161,7 +161,7 @@ public sealed class MechanicsAndLayoutTests
     {
         var engine = new AutoCorrectEngine();
 
-        // "tot " is a valid English word, so auto-layout leaves it untouched until Pause/Break is pressed
+        // "tot " is a valid English word, so auto-layout leaves it untouched until explicit layout hotkey
         Assert.Equal("tot ", engine.SimulateText("tot "));
 
         CorrectionResult toRu = engine.ConvertLastWordLayoutByHotkey();
@@ -169,7 +169,7 @@ public sealed class MechanicsAndLayoutTests
         Assert.Equal("еще ", toRu.ReplacementText);
         Assert.Equal(TargetLanguage.Russian, toRu.SwitchLayoutTo);
 
-        // Pressing Pause/Break a second time toggles right back to "tot "!
+        // Repeating the hotkey toggles back to "tot "
         CorrectionResult backToEn = engine.ConvertLastWordLayoutByHotkey();
         Assert.True(backToEn.HasChange);
         Assert.Equal("tot ", backToEn.ReplacementText);
@@ -185,7 +185,7 @@ public sealed class MechanicsAndLayoutTests
         string afterUndo = engine.SimulateText("привет. на \b");
         Assert.Equal("привет. на", afterUndo);
 
-        // Pressing Space again keeps lowercase "на " once AND must NOT add common word "на" to IgnoredWords!
+        // Pressing Space again keeps lowercase "на " once AND must NOT add common word "на" to IgnoredWords.
         CorrectionResult confirmSpace = engine.OnWhitespace(' ');
         Assert.False(confirmSpace.HasChange);
         Assert.False(engine.UserDictionary.IsIgnored("на"));
@@ -204,7 +204,7 @@ public sealed class MechanicsAndLayoutTests
         string afterUndo = engine.SimulateText("привте \b");
         Assert.Equal("привте", afterUndo);
 
-        // 2. Now press Space to confirm we really wanted "привте" -> stays "привте " and learns into UserDictionary!
+        // 2. Now press Space to confirm we really wanted "привте" -> stays "привте " and learns into UserDictionary.
         CorrectionResult confirmSpace = engine.OnWhitespace(' ');
         Assert.False(confirmSpace.HasChange);
         Assert.True(engine.UserDictionary.IsIgnored("привте"));

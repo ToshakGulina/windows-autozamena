@@ -20,14 +20,13 @@ internal sealed class MainForm : Form
     private bool _suppressEvents;
     private bool _allowRealClose;
 
-    // Header banner controls
     private TableLayoutPanel _headerPanel = null!;
     private Label _lblStatusTitle = null!;
     private Label _lblStatusSub = null!;
     private Button _btnToggleEnabled = null!;
     private bool _dictionarySplitInitialized;
 
-    // Tab 1: General & Mechanics
+    // Tab 1: General
     private ComboBox _cmbSensitivity = null!;
     private CheckBox _chkFixTypos = null!;
     private CheckBox _chkFixDoubleCaps = null!;
@@ -46,7 +45,7 @@ internal sealed class MainForm : Form
     private CheckBox _chkStartup = null!;
     private CheckBox _chkNotifications = null!;
 
-    // Tab 2: Window Filter
+    // Tab 2: Applications
     private RadioButton _rbBlacklist = null!;
     private RadioButton _rbWhitelist = null!;
     private CheckBox _chkFullscreenGames = null!;
@@ -54,14 +53,14 @@ internal sealed class MainForm : Form
     private ListBox _lstProcesses = null!;
     private TextBox _txtNewProcess = null!;
 
-    // Tab 3: User Dictionary
+    // Tab 3: Dictionary
     private ListBox _lstIgnoredWords = null!;
     private TextBox _txtNewIgnored = null!;
     private ListView _lvCustomSnippets = null!;
     private TextBox _txtSnippetTrigger = null!;
     private TextBox _txtSnippetReplacement = null!;
 
-    // Tab 4: Hotkeys (Caramba gestures + customizable bindings)
+    // Tab 4: Shortcuts
     private CheckBox _chkDoubleShiftConvert = null!;
     private CheckBox _chkBothShiftsPause = null!;
     private CheckBox _chkSingleShiftSwitch = null!;
@@ -71,7 +70,7 @@ internal sealed class MainForm : Form
     private Label _lblPauseHotkey = null!;
     private Label _lblLayoutHotkey = null!;
 
-    // Tab 5: Sandbox & History
+    // Tab 5: Test & Log
     private TextBox _txtSandbox = null!;
     private ListView _lvHistory = null!;
     private int _totalCorrectionsCount;
@@ -91,12 +90,12 @@ internal sealed class MainForm : Form
         _onConfigUpdated = onConfigUpdated;
 
         Icon = appIcon;
-        Text = "AutoZamena — Умная автозамена для Windows";
-        Size = new Size(820, 650);
-        MinimumSize = new Size(740, 580);
+        Text = "AutoZamena";
+        Size = new Size(800, 640);
+        MinimumSize = new Size(720, 560);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9.5f);
-        BackColor = Color.FromArgb(246, 248, 250);
+        Font = new Font("Segoe UI", 9.25f);
+        BackColor = Color.FromArgb(245, 246, 248);
 
         BuildLayout();
         LoadValuesFromConfig();
@@ -119,31 +118,27 @@ internal sealed class MainForm : Form
         }
 
         bool enabled = _config.Engine.Enabled;
-        _headerPanel.BackColor = enabled
-            ? Color.FromArgb(232, 248, 240)
-            : Color.FromArgb(254, 243, 226);
-
         _lblStatusTitle.ForeColor = enabled
-            ? Color.FromArgb(14, 116, 70)
-            : Color.FromArgb(165, 92, 18);
+            ? Color.FromArgb(21, 128, 61)
+            : Color.FromArgb(180, 83, 9);
 
         _lblStatusTitle.Text = enabled
-            ? "Автозамена активна — печатайте свободно без остановок"
-            : "Автозамена на паузе";
+            ? "●  Работает"
+            : "●  На паузе";
 
         string pauseHint = _config.UseBothShiftsPause
-            ? "Левый+Правый Shift"
+            ? "Левый + Правый Shift"
             : _config.PauseToggleHotkey.ToDisplayString();
         string convertHint = _config.UseDoubleShiftConvert
-            ? "Двойной Shift (слово / выделение)"
+            ? "2× Shift"
             : _config.ConvertLayoutHotkey.ToDisplayString();
 
         _lblStatusSub.Text =
-            $"Перевод раскладки: {convertHint}   |   " +
-            $"Пауза: {pauseHint}   |   " +
+            $"Раскладка: {convertHint}   ·   " +
+            $"Пауза: {pauseHint}   ·   " +
             $"Исправлено за сессию: {_totalCorrectionsCount}";
 
-        _btnToggleEnabled.Text = enabled ? "Поставить на паузу" : "Включить";
+        _btnToggleEnabled.Text = enabled ? "Пауза" : "Включить";
     }
 
     public void ReloadFromConfigExternal()
@@ -222,15 +217,15 @@ internal sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        // High-DPI-safe top status banner using 2-column TableLayoutPanel
         _headerPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
             AutoSize = true,
-            MinimumSize = new Size(0, 74),
+            MinimumSize = new Size(0, 62),
             ColumnCount = 2,
             RowCount = 2,
-            Padding = new Padding(18, 12, 18, 12)
+            BackColor = Color.White,
+            Padding = new Padding(16, 10, 16, 10)
         };
         _headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         _headerPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -240,22 +235,22 @@ internal sealed class MainForm : Form
         _lblStatusTitle = new Label
         {
             AutoSize = true,
-            Margin = new Padding(0, 0, 12, 3),
-            Font = new Font("Segoe UI", 11.5f, FontStyle.Bold)
+            Margin = new Padding(0, 0, 12, 2),
+            Font = new Font("Segoe UI", 10f, FontStyle.Bold)
         };
 
         _lblStatusSub = new Label
         {
             AutoSize = true,
             Margin = new Padding(0, 0, 12, 0),
-            ForeColor = Color.FromArgb(80, 90, 102),
-            Font = new Font("Segoe UI", 9f)
+            ForeColor = Color.FromArgb(95, 104, 114),
+            Font = new Font("Segoe UI", 8.75f)
         };
 
         _btnToggleEnabled = new Button
         {
             AutoSize = true,
-            MinimumSize = new Size(165, 38),
+            MinimumSize = new Size(120, 32),
             Anchor = AnchorStyles.Right,
             Margin = new Padding(8, 2, 0, 2),
             FlatStyle = FlatStyle.System
@@ -274,11 +269,17 @@ internal sealed class MainForm : Form
         _headerPanel.Controls.Add(_btnToggleEnabled, 1, 0);
         _headerPanel.SetRowSpan(_btnToggleEnabled, 2);
 
-        // Main TabControl
+        var divider = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 1,
+            BackColor = Color.FromArgb(224, 228, 233)
+        };
+
         var tabs = new TabControl
         {
             Dock = DockStyle.Fill,
-            Padding = new Point(12, 6)
+            Padding = new Point(12, 5)
         };
 
         tabs.TabPages.Add(BuildGeneralTab());
@@ -290,17 +291,18 @@ internal sealed class MainForm : Form
         var contentWrapper = new Panel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(12, 10, 12, 12)
+            Padding = new Padding(10, 10, 10, 10)
         };
         contentWrapper.Controls.Add(tabs);
 
         Controls.Add(contentWrapper);
+        Controls.Add(divider);
         Controls.Add(_headerPanel);
     }
 
     private TabPage BuildGeneralTab()
     {
-        var page = new TabPage("Основные") { BackColor = Color.White, Padding = new Padding(18) };
+        var page = new TabPage("Общие") { BackColor = Color.White, Padding = new Padding(16) };
         var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -309,48 +311,45 @@ internal sealed class MainForm : Form
             AutoScroll = true
         };
 
-        // Sensitivity row
         var sensPanel = new FlowLayoutPanel
         {
             AutoSize = true,
             FlowDirection = FlowDirection.LeftToRight,
-            Margin = new Padding(0, 0, 0, 12)
+            Margin = new Padding(0, 0, 0, 8)
         };
         sensPanel.Controls.Add(new Label
         {
-            Text = "Чувствительность автозамены:",
+            Text = "Чувствительность:",
             AutoSize = true,
-            Padding = new Padding(0, 5, 10, 0),
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            Padding = new Padding(0, 5, 10, 0)
         });
         _cmbSensitivity = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 340
+            Width = 320
         };
         _cmbSensitivity.Items.AddRange(new object[]
         {
-            "Бережная (только 100% очевидные промахи)",
-            "Сбалансированная — как на смартфоне (рекомендуется)",
-            "Активная (исправлять больше сложных опечаток)"
+            "Осторожная (только явные опечатки)",
+            "Обычная (по умолчанию)",
+            "Высокая"
         });
         _cmbSensitivity.SelectedIndexChanged += (_, _) => ApplyGeneralControls();
         sensPanel.Controls.Add(_cmbSensitivity);
         flow.Controls.Add(sensPanel);
 
-        // Group: Core typing mechanics
-        flow.Controls.Add(CreateSectionHeader("Механика печати на лету"));
+        flow.Controls.Add(CreateSectionHeader("Автозамена и набор"));
 
-        _chkFixTypos = CreateOptionCheck("Исправлять опечатки по геометрии клавиш, таймингам нажатий и контексту слов");
-        _chkFixDoubleCaps = CreateOptionCheck("Исправлять залипший Shift в начале слова (ПРивет → Привет)");
-        _chkFixInvertedCaps = CreateOptionCheck("Исправлять случайный Caps Lock (пРИВЕТ → Привет) и автоматически выключать Caps Lock");
-        _chkFixRollover = CreateOptionCheck("Склеивать слова, разорванные ранним пробелом (приве т → привет)");
-        _chkAutoCapSentence = CreateOptionCheck("Автоматически делать заглавной букву после точки, ! и ? (. на → . На, с защитой т. д. / г.)");
-        _chkAutoCapFirst = CreateOptionCheck("Делать заглавной первую букву в самом начале нового ввода");
-        _chkDoubleSpacePeriod = CreateOptionCheck("Ставить точку с пробелом по двойному нажатию пробела — как на смартфоне (привет␣␣ → привет. )");
-        _chkSmartTypography = CreateOptionCheck("Умная типографика: заменять двойной дефис между пробелами на длинное тире ( -- → — )");
-        _chkUndoBackspace = CreateOptionCheck("Мгновенный откат автозамены одним нажатием Backspace сразу после пробела");
-        _chkAutoLearnUndo = CreateOptionCheck("Самообучение (как в Caramba): запоминать отменённые слова в личный список исключений");
+        _chkFixTypos = CreateOptionCheck("Исправлять опечатки по геометрии клавиш и контексту");
+        _chkFixDoubleCaps = CreateOptionCheck("Исправлять две заглавные в начале слова (ПРивет → Привет)");
+        _chkFixInvertedCaps = CreateOptionCheck("Исправлять перевёрнутый регистр и выключать Caps Lock (пРИВЕТ → Привет)");
+        _chkFixRollover = CreateOptionCheck("Склеивать слова, разорванные пробелом (приве т → привет)");
+        _chkAutoCapSentence = CreateOptionCheck("Заглавная буква после точки, ! и ?");
+        _chkAutoCapFirst = CreateOptionCheck("Заглавная буква в начале нового ввода");
+        _chkDoubleSpacePeriod = CreateOptionCheck("Точка с пробелом по двойному пробелу (привет␣␣ → привет. )");
+        _chkSmartTypography = CreateOptionCheck("Заменять двойной дефис между пробелами на тире ( -- → — )");
+        _chkUndoBackspace = CreateOptionCheck("Отменять исправление клавишей Backspace сразу после пробела");
+        _chkAutoLearnUndo = CreateOptionCheck("Добавлять отменённые слова в список исключений");
 
         flow.Controls.AddRange(new Control[]
         {
@@ -359,8 +358,7 @@ internal sealed class MainForm : Form
             _chkUndoBackspace, _chkAutoLearnUndo
         });
 
-        // Group: Wrong layout
-        flow.Controls.Add(CreateSectionHeader("Забытая раскладка клавиатуры (ghbdtn ↔ привет, пщщпдуюсщь → google.com)"));
+        flow.Controls.Add(CreateSectionHeader("Раскладка клавиатуры"));
 
         var layoutRow = new FlowLayoutPanel
         {
@@ -377,33 +375,32 @@ internal sealed class MainForm : Form
         _cmbLayoutMode = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 445
+            Width = 390
         };
         _cmbLayoutMode.Items.AddRange(new object[]
         {
             "Выключено",
-            "Только вручную по Двойному Shift / горячей клавише",
-            "Автоматически (слова, фразы z yt pyf., знаки ghbdtn?, адреса) + Двойной Shift"
+            "Только вручную (2× Shift или горячая клавиша)",
+            "Автоматически и по 2× Shift"
         });
         _cmbLayoutMode.SelectedIndexChanged += (_, _) => ApplyGeneralControls();
         layoutRow.Controls.Add(_cmbLayoutMode);
         flow.Controls.Add(layoutRow);
 
-        _chkSwitchOsLayout = CreateOptionCheck("Переключать системную раскладку активного окна после автоисправления слова");
-        _chkPlaySound = CreateOptionCheck("Лёгкий звуковой щелчок при автоматическом переключении раскладки");
+        _chkSwitchOsLayout = CreateOptionCheck("Переключать системную раскладку окна после исправления");
+        _chkPlaySound = CreateOptionCheck("Тихий щелчок при автоматическом переключении раскладки");
         flow.Controls.Add(_chkSwitchOsLayout);
         flow.Controls.Add(_chkPlaySound);
 
-        // Group: System
-        flow.Controls.Add(CreateSectionHeader("Система и трей"));
-        _chkShowLangBadge = CreateOptionCheck("Показывать активную раскладку (RU / EN) цветом и буквами прямо на иконке в трее");
-        _chkStartup = CreateOptionCheck("Запускать AutoZamena автоматически вместе с Windows (в трее)");
+        flow.Controls.Add(CreateSectionHeader("Система"));
+        _chkShowLangBadge = CreateOptionCheck("Показывать активную раскладку (RU / EN) на значке в трее");
+        _chkStartup = CreateOptionCheck("Запускать вместе с Windows");
         _chkStartup.CheckedChanged += (_, _) =>
         {
             if (_suppressEvents) return;
             StartupManager.SetStartupEnabled(_chkStartup.Checked);
         };
-        _chkNotifications = CreateOptionCheck("Показывать всплывающую подсказку в трее при переключении паузы");
+        _chkNotifications = CreateOptionCheck("Показывать уведомление при переключении паузы");
         flow.Controls.Add(_chkShowLangBadge);
         flow.Controls.Add(_chkStartup);
         flow.Controls.Add(_chkNotifications);
@@ -414,25 +411,25 @@ internal sealed class MainForm : Form
 
     private TabPage BuildAppsFilterTab()
     {
-        var page = new TabPage("Приложения и Игры") { BackColor = Color.White, Padding = new Padding(16) };
+        var page = new TabPage("Приложения") { BackColor = Color.White, Padding = new Padding(16) };
 
         var topPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 128,
+            Height = 124,
             FlowDirection = FlowDirection.TopDown,
             WrapContents = false
         };
 
         _rbBlacklist = new RadioButton
         {
-            Text = "Чёрный список — работать везде, КРОМЕ выбранных программ (терминалы, IDE и др.)",
+            Text = "Чёрный список — работать везде, кроме указанных программ",
             AutoSize = true,
             Margin = new Padding(0, 2, 0, 4)
         };
         _rbWhitelist = new RadioButton
         {
-            Text = "Белый список — работать ТОЛЬКО в выбранных программах (браузеры, мессенджеры и др.)",
+            Text = "Белый список — работать только в указанных программах",
             AutoSize = true,
             Margin = new Padding(0, 2, 0, 8)
         };
@@ -441,7 +438,7 @@ internal sealed class MainForm : Form
 
         _chkFullscreenGames = new CheckBox
         {
-            Text = "Автоматически отключать в полноэкранных 3D-играх (защита WASD и античитов)",
+            Text = "Отключать в полноэкранных 3D-приложениях и играх",
             AutoSize = true,
             Margin = new Padding(0, 2, 0, 4)
         };
@@ -454,7 +451,7 @@ internal sealed class MainForm : Form
 
         _chkPasswordFields = new CheckBox
         {
-            Text = "Автоматически отключать в полях ввода паролей (определение через UI Automation)",
+            Text = "Отключать в полях ввода паролей (UI Automation)",
             AutoSize = true,
             Margin = new Padding(0, 2, 0, 4)
         };
@@ -476,12 +473,12 @@ internal sealed class MainForm : Form
         var bottomBar = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 44,
+            Height = 42,
             FlowDirection = FlowDirection.LeftToRight,
             Padding = new Padding(0, 8, 0, 0)
         };
 
-        _txtNewProcess = new TextBox { Width = 190, PlaceholderText = "Например: Code или cmd" };
+        _txtNewProcess = new TextBox { Width = 185, PlaceholderText = "Имя процесса (Code, cmd…)" };
         _txtNewProcess.KeyDown += (_, e) =>
         {
             if (e.KeyCode == Keys.Enter)
@@ -492,14 +489,14 @@ internal sealed class MainForm : Form
             }
         };
 
-        var btnAddManual = new Button { Text = "Добавить", Width = 95, Height = 29 };
+        var btnAddManual = new Button { Text = "Добавить", Width = 92, Height = 28 };
         btnAddManual.Click += (_, _) =>
         {
             AddProcessToActiveList(_txtNewProcess.Text);
             _txtNewProcess.Clear();
         };
 
-        var btnPickRunning = new Button { Text = "Из открытых окон…", Width = 155, Height = 29 };
+        var btnPickRunning = new Button { Text = "Из открытых окон…", Width = 150, Height = 28 };
         btnPickRunning.Click += (_, _) =>
         {
             using var dlg = new ProcessPickerDialog();
@@ -509,7 +506,7 @@ internal sealed class MainForm : Form
             }
         };
 
-        var btnRemove = new Button { Text = "Удалить", Width = 95, Height = 29 };
+        var btnRemove = new Button { Text = "Удалить", Width = 92, Height = 28 };
         btnRemove.Click += (_, _) =>
         {
             if (_lstProcesses.SelectedItem is string sel)
@@ -520,7 +517,7 @@ internal sealed class MainForm : Form
             }
         };
 
-        var btnResetDefaults = new Button { Text = "По умолчанию", Width = 125, Height = 29 };
+        var btnResetDefaults = new Button { Text = "По умолчанию", Width = 120, Height = 28 };
         btnResetDefaults.Click += (_, _) =>
         {
             if (_config.FilterMode == WindowFilterMode.Blacklist)
@@ -548,7 +545,7 @@ internal sealed class MainForm : Form
 
     private TabPage BuildDictionaryTab()
     {
-        var page = new TabPage("Личный словарь") { BackColor = Color.White, Padding = new Padding(14) };
+        var page = new TabPage("Словарь") { BackColor = Color.White, Padding = new Padding(14) };
 
         var split = new SplitContainer
         {
@@ -566,13 +563,12 @@ internal sealed class MainForm : Form
             }
         };
 
-        // Left: Ignored / Whitelisted words
         var leftHeader = new Label
         {
-            Text = "Исключения (слова, которые нельзя трогать):",
+            Text = "Исключения (не исправлять):",
             Dock = DockStyle.Top,
-            Height = 28,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            Height = 26,
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
         };
 
         _lstIgnoredWords = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false };
@@ -580,11 +576,11 @@ internal sealed class MainForm : Form
         var leftBottom = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 42,
+            Height = 40,
             FlowDirection = FlowDirection.LeftToRight,
             Padding = new Padding(0, 6, 0, 0)
         };
-        _txtNewIgnored = new TextBox { Width = 140, PlaceholderText = "Слово / сленг" };
+        _txtNewIgnored = new TextBox { Width = 140, PlaceholderText = "Слово" };
         void SubmitIgnored()
         {
             if (!string.IsNullOrWhiteSpace(_txtNewIgnored.Text))
@@ -601,9 +597,9 @@ internal sealed class MainForm : Form
                 SubmitIgnored();
             }
         };
-        var btnAddIgnored = new Button { Text = "+", Width = 42, Height = 28 };
+        var btnAddIgnored = new Button { Text = "+", Width = 40, Height = 27 };
         btnAddIgnored.Click += (_, _) => SubmitIgnored();
-        var btnDelIgnored = new Button { Text = "Удалить", Width = 85, Height = 28 };
+        var btnDelIgnored = new Button { Text = "Удалить", Width = 84, Height = 27 };
         btnDelIgnored.Click += (_, _) =>
         {
             if (_lstIgnoredWords.SelectedItem is string w)
@@ -617,13 +613,12 @@ internal sealed class MainForm : Form
         split.Panel1.Controls.Add(leftHeader);
         split.Panel1.Controls.Add(leftBottom);
 
-        // Right: Custom Snippets / Triggers
         var rightHeader = new Label
         {
-            Text = "Свои автозамены и сокращения (триггер → замена):",
+            Text = "Сокращения и замены:",
             Dock = DockStyle.Top,
-            Height = 28,
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            Height = 26,
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
         };
 
         _lvCustomSnippets = new ListView
@@ -633,18 +628,18 @@ internal sealed class MainForm : Form
             FullRowSelect = true,
             GridLines = true
         };
-        _lvCustomSnippets.Columns.Add("Сокращение", 125);
-        _lvCustomSnippets.Columns.Add("Заменять на", 265);
+        _lvCustomSnippets.Columns.Add("Сокращение", 120);
+        _lvCustomSnippets.Columns.Add("Замена", 260);
 
         var rightBottom = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 42,
+            Height = 40,
             FlowDirection = FlowDirection.LeftToRight,
             Padding = new Padding(0, 6, 0, 0)
         };
-        _txtSnippetTrigger = new TextBox { Width = 95, PlaceholderText = "Напр.: тг" };
-        _txtSnippetReplacement = new TextBox { Width = 165, PlaceholderText = "Напр.: Telegram" };
+        _txtSnippetTrigger = new TextBox { Width = 92, PlaceholderText = "тг" };
+        _txtSnippetReplacement = new TextBox { Width = 165, PlaceholderText = "Telegram" };
         void SubmitSnippet()
         {
             if (!string.IsNullOrWhiteSpace(_txtSnippetTrigger.Text) &&
@@ -664,9 +659,9 @@ internal sealed class MainForm : Form
                 SubmitSnippet();
             }
         };
-        var btnAddSnippet = new Button { Text = "Сохранить", Width = 90, Height = 28 };
+        var btnAddSnippet = new Button { Text = "Сохранить", Width = 88, Height = 27 };
         btnAddSnippet.Click += (_, _) => SubmitSnippet();
-        var btnDelSnippet = new Button { Text = "Удалить", Width = 80, Height = 28 };
+        var btnDelSnippet = new Button { Text = "Удалить", Width = 80, Height = 27 };
         btnDelSnippet.Click += (_, _) =>
         {
             if (_lvCustomSnippets.SelectedItems.Count > 0)
@@ -687,17 +682,17 @@ internal sealed class MainForm : Form
         var dictToolbar = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 40,
+            Height = 38,
             FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(0, 6, 0, 0)
         };
 
-        var btnImportDict = new Button { Text = "Импорт словаря…", Width = 145, Height = 28 };
+        var btnImportDict = new Button { Text = "Импорт…", Width = 115, Height = 27 };
         btnImportDict.Click += (_, _) =>
         {
             using var dlg = new OpenFileDialog
             {
-                Title = "Импорт личного словаря AutoZamena",
+                Title = "Импорт словаря",
                 Filter = "JSON файлы (*.json)|*.json|Все файлы (*.*)|*.*"
             };
             if (dlg.ShowDialog(this) == DialogResult.OK)
@@ -709,7 +704,7 @@ internal sealed class MainForm : Form
                     RefreshDictionaryLists();
                     MessageBox.Show(
                         this,
-                        $"Импорт завершён: добавлено исключений — {ign}, своих автозамен — {snip}.",
+                        $"Добавлено исключений: {ign}, замен: {snip}.",
                         "Импорт словаря",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information
@@ -717,17 +712,17 @@ internal sealed class MainForm : Form
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(this, $"Не удалось прочитать файл словаря: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(this, $"Не удалось прочитать файл: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
         };
 
-        var btnExportDict = new Button { Text = "Экспорт словаря…", Width = 145, Height = 28 };
+        var btnExportDict = new Button { Text = "Экспорт…", Width = 115, Height = 27 };
         btnExportDict.Click += (_, _) =>
         {
             using var dlg = new SaveFileDialog
             {
-                Title = "Экспорт личного словаря AutoZamena",
+                Title = "Экспорт словаря",
                 Filter = "JSON файлы (*.json)|*.json",
                 FileName = "autozamena-dictionary.json"
             };
@@ -739,17 +734,17 @@ internal sealed class MainForm : Form
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show(this, $"Не удалось сохранить файл словаря: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(this, $"Не удалось сохранить файл: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
         };
 
         var lblMacroHint = new Label
         {
-            Text = "Макросы в заменах: {{date}}, {{time}}, {{iso}}, {{clipboard}} и позиция курсора «|»",
+            Text = "Переменные в шаблонах: {{date}}, {{time}}, {{iso}}, {{clipboard}}, позиция курсора: |",
             AutoSize = true,
-            ForeColor = Color.FromArgb(100, 110, 122),
-            Padding = new Padding(0, 6, 14, 0)
+            ForeColor = Color.FromArgb(100, 108, 118),
+            Padding = new Padding(0, 6, 12, 0)
         };
 
         dictToolbar.Controls.Add(btnImportDict);
@@ -763,7 +758,7 @@ internal sealed class MainForm : Form
 
     private TabPage BuildHotkeysTab()
     {
-        var page = new TabPage("Горячие клавиши") { BackColor = Color.White, Padding = new Padding(18) };
+        var page = new TabPage("Клавиши") { BackColor = Color.White, Padding = new Padding(16) };
         var flow = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -772,19 +767,19 @@ internal sealed class MainForm : Form
             AutoScroll = true
         };
 
-        flow.Controls.Add(CreateSectionHeader("Управление как в Caramba Switcher (без Pause/Break — удобно на ноутбуках и 75%/65% клавиатурах)"));
+        flow.Controls.Add(CreateSectionHeader("Клавиши-модификаторы"));
 
         _chkDoubleShiftConvert = CreateOptionCheck(
-            "Двойной Shift (2× Shift) — перевести последнее слово, отменить автопереключение или перевести ВЫДЕЛЕННЫЙ текст"
+            "Двойной Shift — перевести последнее слово, выделенный текст или отменить переключение"
         );
         _chkBothShiftsPause = CreateOptionCheck(
-            "Левый Shift + Правый Shift (одновременно) — мгновенно поставить AutoZamena на паузу / включить обратно"
+            "Левый Shift + Правый Shift — пауза и возобновление работы"
         );
         _chkSingleShiftSwitch = CreateOptionCheck(
-            "Одиночный Shift (Single Shift) — переключать активную раскладку клавиатуры одним коротким нажатием Shift"
+            "Одиночный Shift — переключение системной раскладки"
         );
         _chkDoubleCtrlLine = CreateOptionCheck(
-            "Двойной Ctrl (2× Ctrl) — перевести всю набранную фразу на текущей строке без выделения и без буфера обмена"
+            "Двойной Ctrl — перевести всю набранную строку"
         );
 
         flow.Controls.AddRange(new Control[]
@@ -795,10 +790,10 @@ internal sealed class MainForm : Form
             _chkDoubleCtrlLine
         });
 
-        flow.Controls.Add(CreateSectionHeader("Операции с выделенным текстом (регистр КАПСЛОК и транслит)"));
+        flow.Controls.Add(CreateSectionHeader("Выделенный текст"));
 
         flow.Controls.Add(BuildCustomBindingRow(
-            "Сменить регистр выделенного текста (строчные → Обычный → ПРОПИСНЫЕ):",
+            "Смена регистра (ПРОПИСНЫЕ → строчные → Обычный):",
             out _lblCycleCaseHotkey,
             onRecord: lbl => StartRecordingBinding(lbl, b => _config.CycleCaseHotkey = b),
             onClearOrReset: () =>
@@ -811,7 +806,7 @@ internal sealed class MainForm : Form
         ));
 
         flow.Controls.Add(BuildCustomBindingRow(
-            "Транслитерация выделенного текста (Привет ↔ Privet):",
+            "Транслитерация (Привет ↔ Privet):",
             out _lblTranslitHotkey,
             onRecord: lbl => StartRecordingBinding(lbl, b => _config.TransliterateHotkey = b),
             onClearOrReset: () =>
@@ -823,10 +818,10 @@ internal sealed class MainForm : Form
             resetText: "Сброс (Ctrl+Alt+T)"
         ));
 
-        flow.Controls.Add(CreateSectionHeader("Дополнительные пользовательские сочетания клавиш"));
+        flow.Controls.Add(CreateSectionHeader("Дополнительные сочетания"));
 
         flow.Controls.Add(BuildCustomBindingRow(
-            "Дополнительная клавиша паузы / включения:",
+            "Пауза / возобновление:",
             out _lblPauseHotkey,
             onRecord: lbl => StartRecordingBinding(lbl, b => _config.PauseToggleHotkey = b),
             onClearOrReset: () =>
@@ -840,7 +835,7 @@ internal sealed class MainForm : Form
         ));
 
         flow.Controls.Add(BuildCustomBindingRow(
-            "Дополнительная клавиша перевода раскладки слова (необязательно, работает вместе с 2× Shift):",
+            "Перевод раскладки последнего слова:",
             out _lblLayoutHotkey,
             onRecord: lbl => StartRecordingBinding(lbl, b => _config.ConvertLayoutHotkey = b),
             onClearOrReset: () =>
@@ -876,27 +871,27 @@ internal sealed class MainForm : Form
         {
             Text = caption,
             AutoSize = true,
-            ForeColor = Color.FromArgb(80, 90, 102),
+            ForeColor = Color.FromArgb(80, 88, 98),
             Margin = new Padding(0, 0, 0, 3)
         });
 
         var row = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight };
         var lbl = new Label
         {
-            Width = 210,
-            Height = 30,
+            Width = 205,
+            Height = 29,
             BorderStyle = BorderStyle.FixedSingle,
             TextAlign = ContentAlignment.MiddleCenter,
-            BackColor = Color.FromArgb(245, 247, 250),
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+            BackColor = Color.FromArgb(246, 248, 250),
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold),
             Margin = new Padding(0, 0, 8, 0)
         };
         valueLabel = lbl;
 
-        var btnSet = new Button { Text = "Задать…", Width = 115, Height = 30 };
+        var btnSet = new Button { Text = "Задать…", Width = 110, Height = 29 };
         btnSet.Click += (_, _) => onRecord(lbl);
 
-        var btnReset = new Button { Text = resetText, Width = 155, Height = 30 };
+        var btnReset = new Button { Text = resetText, Width = 150, Height = 29 };
         btnReset.Click += (_, _) => onClearOrReset();
 
         row.Controls.AddRange(new Control[] { lbl, btnSet, btnReset });
@@ -906,15 +901,15 @@ internal sealed class MainForm : Form
 
     private TabPage BuildSandboxHistoryTab()
     {
-        var page = new TabPage("Песочница и Журнал") { BackColor = Color.White, Padding = new Padding(14) };
+        var page = new TabPage("Проверка и журнал") { BackColor = Color.White, Padding = new Padding(14) };
 
-        var topSandboxPanel = new Panel { Dock = DockStyle.Top, Height = 155 };
+        var topSandboxPanel = new Panel { Dock = DockStyle.Top, Height = 140 };
         var lblSandbox = new Label
         {
-            Text = "Живая песочница — кликни ниже и попробуй: «возврапщатся наза », «z yt pyf. », «пРИВЕТ », двойной пробел или 2× Shift:",
+            Text = "Поле для проверки ввода:",
             Dock = DockStyle.Top,
-            Height = 42,
-            Font = new Font("Segoe UI", 9f, FontStyle.Bold)
+            Height = 24,
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
         };
 
         _txtSandbox = new TextBox
@@ -922,8 +917,8 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Font = new Font("Segoe UI", 11f),
-            BackColor = Color.FromArgb(252, 254, 255)
+            Font = new Font("Segoe UI", 10.5f),
+            BackColor = Color.White
         };
         _txtSandbox.GotFocus += (_, _) => _engine.ResetContext();
 
@@ -932,11 +927,11 @@ internal sealed class MainForm : Form
 
         var historyHeader = new Label
         {
-            Text = "Журнал последних автозамен:",
+            Text = "Последние замены (хранятся только в памяти текущей сессии):",
             Dock = DockStyle.Top,
-            Height = 30,
+            Height = 28,
             Padding = new Padding(0, 8, 0, 0),
-            Font = new Font("Segoe UI", 9.5f, FontStyle.Bold)
+            Font = new Font("Segoe UI", 9.25f, FontStyle.Bold)
         };
 
         _lvHistory = new ListView
@@ -946,24 +941,24 @@ internal sealed class MainForm : Form
             FullRowSelect = true,
             GridLines = true
         };
-        _lvHistory.Columns.Add("Время", 78);
+        _lvHistory.Columns.Add("Время", 76);
         _lvHistory.Columns.Add("Набрано", 145);
-        _lvHistory.Columns.Add("Исправлено на", 155);
-        _lvHistory.Columns.Add("Причина", 230);
-        _lvHistory.Columns.Add("Приложение", 120);
+        _lvHistory.Columns.Add("Заменено на", 155);
+        _lvHistory.Columns.Add("Тип", 220);
+        _lvHistory.Columns.Add("Процесс", 120);
 
         var historyBottom = new FlowLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 40,
+            Height = 38,
             FlowDirection = FlowDirection.LeftToRight,
             Padding = new Padding(0, 6, 0, 0)
         };
         var btnWhitelistSelected = new Button
         {
             Text = "Добавить «Набрано» в исключения",
-            Width = 245,
-            Height = 29
+            Width = 235,
+            Height = 28
         };
         btnWhitelistSelected.Click += (_, _) =>
         {
@@ -975,18 +970,18 @@ internal sealed class MainForm : Form
                 _engine.UserDictionary.AddIgnoredWord(entry.OriginalText);
                 MessageBox.Show(
                     this,
-                    $"Слово «{entry.OriginalText}» добавлено в личный белый список и больше не будет исправляться.",
-                    "Добавлено в исключения",
+                    $"Слово «{entry.OriginalText}» добавлено в список исключений.",
+                    "Исключения",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information
                 );
             }
         };
 
-        var btnClearHistory = new Button { Text = "Очистить журнал", Width = 140, Height = 29 };
+        var btnClearHistory = new Button { Text = "Очистить журнал", Width = 135, Height = 28 };
         btnClearHistory.Click += (_, _) => _lvHistory.Items.Clear();
 
-        var btnClearSandbox = new Button { Text = "Очистить песочницу", Width = 155, Height = 29 };
+        var btnClearSandbox = new Button { Text = "Очистить поле", Width = 130, Height = 28 };
         btnClearSandbox.Click += (_, _) =>
         {
             _txtSandbox.Clear();
@@ -1020,9 +1015,9 @@ internal sealed class MainForm : Form
     {
         Text = title,
         AutoSize = true,
-        Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-        ForeColor = Color.FromArgb(24, 48, 76),
-        Margin = new Padding(0, 12, 0, 5)
+        Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
+        ForeColor = Color.FromArgb(30, 41, 59),
+        Margin = new Padding(0, 12, 0, 4)
     };
 
     private void LoadValuesFromConfig()
@@ -1175,15 +1170,15 @@ internal sealed class MainForm : Form
 
     private void StartRecordingBinding(Label targetLabel, Action<HotkeyBinding> applyBinding)
     {
-        targetLabel.Text = "Нажмите клавишу… (Esc — отмена)";
-        targetLabel.BackColor = Color.FromArgb(255, 244, 214);
+        targetLabel.Text = "Нажмите сочетание… (Esc — отмена)";
+        targetLabel.BackColor = Color.FromArgb(254, 249, 195);
 
         _hook.HotkeyRecorderInterceptor = (vk, ctrl, alt, shift) =>
         {
             BeginInvoke(() =>
             {
                 _hook.HotkeyRecorderInterceptor = null;
-                targetLabel.BackColor = Color.FromArgb(245, 247, 250);
+                targetLabel.BackColor = Color.FromArgb(246, 248, 250);
 
                 if (vk != NativeMethods.VK_ESCAPE)
                 {

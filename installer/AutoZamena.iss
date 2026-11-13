@@ -45,8 +45,8 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-russian.AutoStartTask=Запускать AutoZamena автоматически вместе с Windows (в системном трее)
-english.AutoStartTask=Start AutoZamena automatically with Windows (in system tray)
+russian.AutoStartTask=Запускать AutoZamena вместе с Windows
+english.AutoStartTask=Start AutoZamena with Windows
 
 [Tasks]
 Name: "autostart"; Description: "{cm:AutoStartTask}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -58,8 +58,8 @@ Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\AutoZamena"; Filename: "{app}\AutoZamena.exe"; Comment: "Умная автозамена на лету и переключатель раскладки RU ↔ EN"
-Name: "{autodesktop}\AutoZamena"; Filename: "{app}\AutoZamena.exe"; Tasks: desktopicon; Comment: "Умная автозамена на лету и переключатель раскладки RU ↔ EN"
+Name: "{autoprograms}\AutoZamena"; Filename: "{app}\AutoZamena.exe"; Comment: "Автозамена опечаток и переключение раскладки клавиатуры"
+Name: "{autodesktop}\AutoZamena"; Filename: "{app}\AutoZamena.exe"; Tasks: desktopicon; Comment: "Автозамена опечаток и переключение раскладки клавиатуры"
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "AutoZamena"; ValueData: """{app}\AutoZamena.exe"" --minimized"; Flags: uninsdeletevalue; Tasks: autostart
