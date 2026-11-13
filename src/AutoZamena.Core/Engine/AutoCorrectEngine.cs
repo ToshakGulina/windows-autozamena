@@ -886,7 +886,7 @@ public sealed class AutoCorrectEngine
 
         // 2. Wrong keyboard layout auto-detection (e.g. "ghbdtn" -> "привет", "ghbdtn?" -> "привет,", "пщщпдуюсщь" -> "google.com")
         if (Settings.LayoutMode == LayoutSwitchMode.AutoHighConfidenceAndHotkey &&
-            !TokenGuards.HasExpressiveLetterRepeat(rawSpan) &&
+            (!TokenGuards.HasExpressiveLetterRepeat(rawSpan) || rawSpan.StartsWith("цццю", StringComparison.OrdinalIgnoreCase)) &&
             (allowWrongLayoutRaw || rawSpan == wordToken))
         {
             CorrectionResult? layoutFix = TryAutoFixWrongLayout(
@@ -1758,7 +1758,7 @@ public sealed class AutoCorrectEngine
         string coreEnSpan = enMappedTrailPunct.HasValue ? rawSpan[..^1] : rawSpan;
         bool hasNonLetterRuKey = ContainsNonLetterEnKeyForRu(coreEnSpan);
 
-        if (coreEnSpan.Length >= 3 && !(coreEnSpan.Length == 3 && !hasNonLetterRuKey))
+        if (coreEnSpan.Length >= 3 && !(coreEnSpan.Length == 3 && !hasNonLetterRuKey && savedPrevRu is null))
         {
             string coreEnLower = coreEnSpan.ToLowerInvariant();
             if (!_lexicon.IsProtectedWord(coreEnLower) && !_userDictionary.IsIgnored(coreEnSpan))
@@ -1776,7 +1776,7 @@ public sealed class AutoCorrectEngine
                 if (allEnKeysForRu && !_lexicon.IsKnownEnWord(coreEnLower))
                 {
                     bool hasAnyCloseEn = false;
-                    if (TokenGuards.IsPureLatinWord(coreEnLower))
+                    if (TokenGuards.IsPureLatinWord(coreEnLower) && savedPrevRu is null)
                     {
                         ScoredCandidate? closeEn = NoisyChannelScorer.FindBestEnCandidate(
                             _lexicon,
@@ -1804,7 +1804,7 @@ public sealed class AutoCorrectEngine
                         double resolvedConfidence = 4.5;
                         string reason = "Забытая раскладка EN→RU";
 
-                        float minRuZipf = coreEnSpan.Length == 3 ? 5.0f : 3.10f;
+                        float minRuZipf = coreEnSpan.Length == 3 ? (savedPrevRu is not null ? 4.20f : 5.0f) : 3.10f;
                         if (validCasing &&
                             ((_lexicon.TryGetRuWord(mappedRuLower, out RuWordEntry ruTarget) && ruTarget.Zipf >= minRuZipf) ||
                              (coreEnSpan.Length >= 4 && TokenGuards.IsPureCyrillicWord(mappedRuLower) && _lexicon.IsProtectedWord(mappedRuLower))))
@@ -2374,7 +2374,7 @@ public sealed class AutoCorrectEngine
 
     private void UpdatePreviousLanguageContext(string committedText)
     {
-        string clean = committedText.Trim('"', '.', ':');
+        string clean = committedText.Trim('"', '.', ':', ',', ';');
         int spaceIdx = clean.LastIndexOf(' ');
         string lastToken = (spaceIdx >= 0 ? clean[(spaceIdx + 1)..] : clean).ToLowerInvariant();
         int hyphIdx = lastToken.LastIndexOf('-');

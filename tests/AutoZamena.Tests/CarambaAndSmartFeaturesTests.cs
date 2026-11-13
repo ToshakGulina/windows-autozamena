@@ -122,7 +122,7 @@ public sealed class CarambaAndSmartFeaturesTests
     [InlineData("руддщб цщкдв ", "hello, world ")]
     [InlineData("пщщпдуюсщь ", "google.com ")]
     [InlineData("цццюнфюкг ", "www.ya.ru ")]
-    [InlineData("пшехаиюсщь ", "github.com ")]
+    [InlineData("пшергиюсщь ", "github.com ")]
     [InlineData("hellp? ", "help? ")]
     public void WrongLayoutPunctuationAndDomains_FixedCleanlyWithoutBreakingEnglishQuestionTypos(string input, string expected)
     {
