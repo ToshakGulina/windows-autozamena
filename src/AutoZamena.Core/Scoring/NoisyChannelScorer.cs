@@ -39,8 +39,9 @@ public static class NoisyChannelScorer
         float maxEditCost = GetMaxEditCost(len, sensitivity, isMidSentenceCapitalized);
         float minScore = GetMinScore(len, sensitivity, isMidSentenceCapitalized);
         float lengthBonus = len >= 8 ? MathF.Min(0.55f, (len - 7) * 0.11f) : 0f;
+        bool hasFastChord = HasAnyFastChord(keystrokes);
 
-        var candidateIndices = new List<int>(64);
+        var candidateIndices = new List<int>(128);
         lexicon.QueryRuCandidates(typedLower, maxSymDist, candidateIndices);
         if (candidateIndices.Count == 0)
         {
@@ -61,6 +62,16 @@ public static class NoisyChannelScorer
             float contextBoost = prevWord.HasValue
                 ? lexicon.GetRuContextBoost(prevWord.Value, in entry)
                 : 0f;
+
+            float requiredMinScore = best.HasValue
+                ? MathF.Max(minScore, best.Value.Score - 0.26f)
+                : minScore;
+
+            float scoreCeiling = entry.Zipf + lengthBonus + contextBoost;
+            if (scoreCeiling < requiredMinScore)
+            {
+                continue;
+            }
 
             // Never truncate a 3-letter token or expand a 3-letter abbreviation ("сво", "чат") without strong context
             if (len == 3 && entry.Word.Length != 3 && contextBoost < 1.0f)
@@ -84,13 +95,24 @@ public static class NoisyChannelScorer
                 ? MathF.Min(maxEditCost, 0.88f)
                 : maxEditCost;
 
+            candMaxEditCost = MathF.Min(candMaxEditCost, (scoreCeiling - requiredMinScore) / Lambda);
+            if (candMaxEditCost < 0.07f)
+            {
+                continue;
+            }
+
+            if (ComputeAdmissibleCostLowerBound(typedLower, entry.Word, hasFastChord) > candMaxEditCost + 0.005f)
+            {
+                continue;
+            }
+
             float editCost = ComputePhysicalEditCost(typedLower, entry.Word, keystrokes, candMaxEditCost);
             if (editCost > candMaxEditCost)
             {
                 continue;
             }
 
-            float score = entry.Zipf + lengthBonus + contextBoost - (Lambda * editCost);
+            float score = scoreCeiling - (Lambda * editCost);
             if (score < minScore)
             {
                 continue;
@@ -148,8 +170,9 @@ public static class NoisyChannelScorer
         float maxEditCost = GetMaxEditCost(len, sensitivity, isMidSentenceCapitalized);
         float minScore = GetMinScore(len, sensitivity, isMidSentenceCapitalized);
         float lengthBonus = len >= 8 ? MathF.Min(0.55f, (len - 7) * 0.11f) : 0f;
+        bool hasFastChord = HasAnyFastChord(keystrokes);
 
-        var candidateIndices = new List<int>(64);
+        var candidateIndices = new List<int>(128);
         lexicon.QueryEnCandidates(typedLower, maxSymDist, candidateIndices);
         if (candidateIndices.Count == 0)
         {
@@ -171,6 +194,16 @@ public static class NoisyChannelScorer
                 ? lexicon.GetEnContextBoost(prevWord.Value, in entry)
                 : 0f;
 
+            float requiredMinScore = best.HasValue
+                ? MathF.Max(minScore, best.Value.Score - 0.26f)
+                : minScore;
+
+            float scoreCeiling = entry.Zipf + lengthBonus + contextBoost;
+            if (scoreCeiling < requiredMinScore)
+            {
+                continue;
+            }
+
             if (len == 3 && entry.Word.Length != 3 && contextBoost < 1.0f)
             {
                 continue;
@@ -190,13 +223,24 @@ public static class NoisyChannelScorer
                 ? MathF.Min(maxEditCost, 0.88f)
                 : maxEditCost;
 
+            candMaxEditCost = MathF.Min(candMaxEditCost, (scoreCeiling - requiredMinScore) / Lambda);
+            if (candMaxEditCost < 0.07f)
+            {
+                continue;
+            }
+
+            if (ComputeAdmissibleCostLowerBound(typedLower, entry.Word, hasFastChord) > candMaxEditCost + 0.005f)
+            {
+                continue;
+            }
+
             float editCost = ComputePhysicalEditCost(typedLower, entry.Word, keystrokes, candMaxEditCost);
             if (editCost > candMaxEditCost)
             {
                 continue;
             }
 
-            float score = entry.Zipf + lengthBonus + contextBoost - (Lambda * editCost);
+            float score = scoreCeiling - (Lambda * editCost);
             if (score < minScore)
             {
                 continue;
@@ -229,6 +273,72 @@ public static class NoisyChannelScorer
         }
 
         return best;
+    }
+
+    private static float ComputeAdmissibleCostLowerBound(string typed, string cand, bool hasFastChord)
+    {
+        int n = typed.Length;
+        int m = cand.Length;
+        int diff = Math.Abs(n - m);
+        if (diff > 2)
+        {
+            return 99f;
+        }
+
+        int minLen = Math.Min(n, m);
+        int pfx = 0;
+        while (pfx < minLen && CharsEqualOrYo(typed[pfx], cand[pfx]))
+        {
+            pfx++;
+        }
+
+        int sfx = 0;
+        int maxSfx = minLen - pfx;
+        while (sfx < maxSfx && CharsEqualOrYo(typed[n - 1 - sfx], cand[m - 1 - sfx]))
+        {
+            sfx++;
+        }
+
+        int remT = n - pfx - sfx;
+        int remC = m - pfx - sfx;
+        int span = Math.Max(remT, remC);
+
+        if (span == 0)
+        {
+            return 0f;
+        }
+
+        if (span == 1)
+        {
+            if (remT == 1 && remC == 1)
+            {
+                return 0.65f;
+            }
+            if (remT == 1)
+            {
+                return hasFastChord ? 0.35f : 0.48f;
+            }
+            return cand.EndsWith("ться", StringComparison.Ordinal) ? 0.28f : 0.45f;
+        }
+
+        if (remT == 2 && remC == 2 &&
+            CharsEqualOrYo(typed[pfx], cand[pfx + 1]) &&
+            CharsEqualOrYo(typed[pfx + 1], cand[pfx]))
+        {
+            return 0.36f;
+        }
+
+        // At least 2 independent non-'ё' edits
+        float firstMin = cand.EndsWith("ться", StringComparison.Ordinal)
+            ? 0.28f
+            : (hasFastChord ? 0.35f : 0.45f);
+        float secondMin = hasFastChord ? 0.35f : 0.45f;
+        float bound = firstMin + secondMin;
+        if (n - m >= 2 && !hasFastChord)
+        {
+            bound += 0.55f;
+        }
+        return bound;
     }
 
     /// <summary>

@@ -1439,7 +1439,13 @@ public sealed class AutoCorrectEngine
                         isMidSentenceCap)
                     : null;
 
-                SplitCandidate? splitRu = Settings.SplitRunTogetherWords && !isMidSentenceCap && wordToken.Length >= 4
+                bool skipRuSplit = bestRu.HasValue && bestRu.Value.EditCost <= 0.50f &&
+                                   !lower.EndsWith("нибудь", StringComparison.Ordinal) &&
+                                   !lower.EndsWith("либо", StringComparison.Ordinal) &&
+                                   !lower.EndsWith("то", StringComparison.Ordinal) &&
+                                   !lower.StartsWith("кое", StringComparison.Ordinal);
+
+                SplitCandidate? splitRu = Settings.SplitRunTogetherWords && !isMidSentenceCap && wordToken.Length >= 4 && !skipRuSplit
                     ? RunTogetherSplitter.TrySplitRussian(_lexicon, lower, _prevRuWord)
                     : null;
 
@@ -2029,29 +2035,30 @@ public sealed class AutoCorrectEngine
         }
 
         // Direction 2b: Typed in RU layout -> intended EN word ("еру" -> "the", "руддщ" -> "hello", "вщтэе" -> "don't", "руддщб" -> "hello,")
+        // Fast-path: check if mapped EN candidate exists FIRST (O(1) dictionary lookup) before running RU typo scorer
         if (rawSpan.Length >= 3 && TokenGuards.IsPureCyrillicWord(rawSpan) && !_lexicon.IsKnownRuWord(rawLower))
         {
-            ScoredCandidate? closeRu = savedPrevEn is null
-                ? NoisyChannelScorer.FindBestRuCandidate(
-                    _lexicon,
-                    rawLower,
-                    ReadOnlySpan<KeyStrokeEvent>.Empty,
-                    _prevRuWord,
-                    SensitivityLevel.Balanced,
-                    isMidSentenceCapitalized: false)
-                : null;
+            string? resolvedEnWord = TryResolveRuTypedEnglishWord(
+                rawSpan,
+                shouldCapSentence,
+                savedPrevEn is not null,
+                out char? ruMappedEnTrailPunct,
+                out bool turnOffCaps
+            );
 
-            if (!closeRu.HasValue || closeRu.Value.EditCost > 0.90f || closeRu.Value.Score < 2.20f)
+            if (resolvedEnWord is not null)
             {
-                string? resolvedEnWord = TryResolveRuTypedEnglishWord(
-                    rawSpan,
-                    shouldCapSentence,
-                    savedPrevEn is not null,
-                    out char? ruMappedEnTrailPunct,
-                    out bool turnOffCaps
-                );
+                ScoredCandidate? closeRu = savedPrevEn is null
+                    ? NoisyChannelScorer.FindBestRuCandidate(
+                        _lexicon,
+                        rawLower,
+                        ReadOnlySpan<KeyStrokeEvent>.Empty,
+                        _prevRuWord,
+                        SensitivityLevel.Balanced,
+                        isMidSentenceCapitalized: false)
+                    : null;
 
-                if (resolvedEnWord is not null)
+                if (!closeRu.HasValue || closeRu.Value.EditCost > 0.90f || closeRu.Value.Score < 2.20f)
                 {
                     return CommitRuToEnLayoutWithRetroactiveChain(
                         rawSpan,
