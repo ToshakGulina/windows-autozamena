@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 280" width="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1324"/>
+      <stop offset="55%" stop-color="#0f1f33"/>
+      <stop offset="100%" stop-color="#092926"/>
+    </linearGradient>
+    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14c384"/>
+      <stop offset="100%" stop-color="#0a786e"/>
+    </linearGradient>
+    <linearGradient id="pillRu" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="pillEn" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="2" y="2" width="1076" height="276" rx="22" fill="url(#bg)" stroke="#1f3a52" stroke-width="2"/>
+
+  <!-- Subtle decorative grid dots -->
+  <g fill="#38bdf8" opacity="0.10">
+    <circle cx="940" cy="54" r="3"/><circle cx="972" cy="54" r="3"/><circle cx="1004" cy="54" r="3"/>
+    <circle cx="940" cy="86" r="3"/><circle cx="972" cy="86" r="3"/><circle cx="1004" cy="86" r="3"/>
+    <circle cx="940" cy="118" r="3"/><circle cx="972" cy="118" r="3"/><circle cx="1004" cy="118" r="3"/>
+  </g>
+
+  <!-- App Squircle Icon -->
+  <g transform="translate(56, 56)">
+    <rect x="0" y="0" width="128" height="128" rx="32" fill="url(#iconGrad)" stroke="#5eead4" stroke-opacity="0.35" stroke-width="2"/>
+    <path d="M62 28 L33 100 M62 28 L91 100 M44 77 L80 77" stroke="#ffffff" stroke-width="13.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <circle cx="96" cy="34" r="10.5" fill="#7df9ff"/>
+  </g>
+
+  <!-- Title & Subtitle -->
+  <text x="216" y="106" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif" font-size="48" font-weight="800" fill="#f8fafc" letter-spacing="-0.5">AutoZamena</text>
+  <rect x="525" y="74" width="76" height="30" rx="15" fill="#133a36" stroke="#10b981" stroke-width="1.5"/>
+  <text x="563" y="94" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" font-weight="700" fill="#6ee7b7">v1.0.0</text>
+
+  <text x="216" y="146" font-family="Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif" font-size="20" font-weight="500" fill="#cbd5e1">
+    Смартфонная автозамена опечаток на лету и переключатель раскладки для Windows
+  </text>
+
+  <!-- Feature Pills Row -->
+  <g transform="translate(216, 174)" font-family="Segoe UI, -apple-system, sans-serif" font-size="14" font-weight="600">
+    <rect x="0" y="0" width="168" height="36" rx="10" fill="#17253a" stroke="#334155" stroke-width="1.5"/>
+    <text x="84" y="23" text-anchor="middle" fill="#e2e8f0">⚡ Задержка &lt; 1 мс</text>
+
+    <rect x="182" y="0" width="218" height="36" rx="10" fill="#17253a" stroke="#334155" stroke-width="1.5"/>
+    <text x="291" y="23" text-anchor="middle" fill="#e2e8f0">⇧⇧ Жесты Caramba Switcher</text>
+
+    <rect x="414" y="0" width="194" height="36" rx="10" fill="#17253a" stroke="#334155" stroke-width="1.5"/>
+    <text x="511" y="23" text-anchor="middle" fill="#e2e8f0">📚 273 000+ слов (RU+EN)</text>
+
+    <rect x="622" y="0" width="96" height="36" rx="10" fill="url(#pillRu)"/>
+    <text x="670" y="23" text-anchor="middle" fill="#ffffff" font-weight="700">RU</text>
+
+    <rect x="728" y="0" width="96" height="36" rx="10" fill="url(#pillEn)"/>
+    <text x="776" y="23" text-anchor="middle" fill="#ffffff" font-weight="700">EN</text>
+  </g>
+</svg>
