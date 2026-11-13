@@ -222,22 +222,34 @@ public sealed class LowLevelInputHook : IDisposable
             return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
         }
 
-        // 5. Explicit Layout-Convert Hotkey (e.g. Pause/Break -> converts last word RU <-> EN)
-        if (!win && cfg.Engine.LayoutMode != LayoutSwitchMode.Off &&
-            cfg.ConvertLayoutHotkey.Matches(vk, ctrl, alt, shift))
+        // 5. Explicit Layout-Convert Hotkey:
+        //    - Pause/Break -> converts last word RU <-> EN
+        //    - Shift + Pause/Break (when hotkey itself doesn't require Shift) -> converts entire typed phrase on current line!
+        if (!win && cfg.Engine.LayoutMode != LayoutSwitchMode.Off)
         {
-            CorrectionResult hkRes;
-            lock (_engineLock)
-            {
-                hkRes = _engine.ConvertLastWordLayoutByHotkey();
-            }
+            bool singleMatch = cfg.ConvertLayoutHotkey.Matches(vk, ctrl, alt, shift);
+            bool phraseMatch = !singleMatch &&
+                               !cfg.ConvertLayoutHotkey.Shift &&
+                               shift &&
+                               cfg.ConvertLayoutHotkey.Matches(vk, ctrl, alt, shiftDown: false);
 
-            if (hkRes.HasChange)
+            if (singleMatch || phraseMatch)
             {
-                AtomicTextInjector.Dispatch(hkRes);
-                NotifyCorrection(hkRes, procName);
+                CorrectionResult hkRes;
+                lock (_engineLock)
+                {
+                    hkRes = phraseMatch
+                        ? _engine.ConvertPhraseLayoutByHotkey()
+                        : _engine.ConvertLastWordLayoutByHotkey();
+                }
+
+                if (hkRes.HasChange)
+                {
+                    AtomicTextInjector.Dispatch(hkRes);
+                    NotifyCorrection(hkRes, procName);
+                }
+                return (IntPtr)1;
             }
-            return (IntPtr)1;
         }
 
         // 6. Any Ctrl / Alt / Win shortcut (EXCEPT AltGr printable symbols like '@'!) resets word buffer and passes through

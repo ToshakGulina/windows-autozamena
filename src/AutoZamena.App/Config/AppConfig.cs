@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Unicode;
+using AutoZamena.Core.Lexicon;
 using AutoZamena.Core.Models;
 
 namespace AutoZamena.App.Config;
@@ -82,8 +84,16 @@ public sealed class HotkeyBinding
     }
 }
 
+public sealed class PersonalDictionaryBundle
+{
+    public List<string> IgnoredWords { get; set; } = new();
+    public Dictionary<string, string> CustomReplacements { get; set; } = new();
+}
+
 public sealed class AppConfig
 {
+    private static readonly object SaveLock = new();
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -120,7 +130,7 @@ public sealed class AppConfig
 
     public static List<string> CreateDefaultWhitelist() => new()
     {
-        "Telegram", "Discord", "chrome", "msedge", "firefox", "brave", "opera", "vivaldi",
+        "Telegram", "Discord", "chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "browser",
         "WINWORD", "Notion", "Obsidian", "Slack", "WhatsApp", "notepad"
     };
 
@@ -150,28 +160,10 @@ public sealed class AppConfig
     public static AppConfig Load()
     {
         string path = GetConfigFilePath();
-        try
+        AppConfig? loaded = TryReadSingleConfigFile(path) ?? TryReadSingleConfigFile(path + ".bak");
+        if (loaded is not null)
         {
-            if (File.Exists(path))
-            {
-                string json = File.ReadAllText(path);
-                AppConfig? loaded = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
-                if (loaded is not null)
-                {
-                    loaded.Engine ??= new EngineSettings();
-                    loaded.BlacklistedProcesses ??= CreateDefaultBlacklist();
-                    loaded.WhitelistedProcesses ??= CreateDefaultWhitelist();
-                    loaded.PauseToggleHotkey ??= new HotkeyBinding(true, true, false, 0x5A);
-                    loaded.ConvertLayoutHotkey ??= new HotkeyBinding(false, false, false, 0x13);
-                    loaded.IgnoredWords ??= new List<string>();
-                    loaded.CustomReplacements ??= new Dictionary<string, string>();
-                    return loaded;
-                }
-            }
-        }
-        catch
-        {
-            // Return fresh default config if corrupted
+            return loaded;
         }
 
         var fresh = new AppConfig();
@@ -179,22 +171,121 @@ public sealed class AppConfig
         return fresh;
     }
 
-    public void Save()
+    private static AppConfig? TryReadSingleConfigFile(string filePath)
     {
         try
         {
-            string path = GetConfigFilePath();
-            string? dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir))
+            if (!File.Exists(filePath))
             {
-                Directory.CreateDirectory(dir);
+                return null;
             }
-            string json = JsonSerializer.Serialize(this, JsonOptions);
-            File.WriteAllText(path, json);
+
+            string json = File.ReadAllText(filePath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            AppConfig? loaded = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions);
+            if (loaded is null)
+            {
+                return null;
+            }
+
+            loaded.Engine ??= new EngineSettings();
+            loaded.BlacklistedProcesses ??= CreateDefaultBlacklist();
+            loaded.WhitelistedProcesses ??= CreateDefaultWhitelist();
+            loaded.PauseToggleHotkey ??= new HotkeyBinding(true, true, false, 0x5A);
+            loaded.ConvertLayoutHotkey ??= new HotkeyBinding(false, false, false, 0x13);
+            loaded.IgnoredWords ??= new List<string>();
+            loaded.CustomReplacements ??= new Dictionary<string, string>();
+            return loaded;
         }
         catch
         {
-            // Ignore transient IO failures
+            return null;
         }
+    }
+
+    /// <summary>
+    /// Crash-safe atomic save via temporary file + backup + NTFS atomic rename.
+    /// </summary>
+    public void Save()
+    {
+        lock (SaveLock)
+        {
+            try
+            {
+                string path = GetConfigFilePath();
+                string? dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    Directory.CreateDirectory(dir);
+                }
+
+                string tmpPath = path + ".tmp";
+                string bakPath = path + ".bak";
+                string json = JsonSerializer.Serialize(this, JsonOptions);
+
+                File.WriteAllText(tmpPath, json);
+                if (File.Exists(path))
+                {
+                    File.Copy(path, bakPath, overwrite: true);
+                }
+                File.Move(tmpPath, path, overwrite: true);
+            }
+            catch
+            {
+                // Ignore transient IO failures
+            }
+        }
+    }
+
+    public static void ExportPersonalDictionary(string filePath, UserDictionary dictionary)
+    {
+        var bundle = new PersonalDictionaryBundle
+        {
+            IgnoredWords = dictionary.IgnoredWords.ToList(),
+            CustomReplacements = new Dictionary<string, string>(dictionary.CustomReplacements, StringComparer.OrdinalIgnoreCase)
+        };
+        string json = JsonSerializer.Serialize(bundle, JsonOptions);
+        File.WriteAllText(filePath, json);
+    }
+
+    public static (int AddedIgnored, int AddedSnippets) ImportPersonalDictionary(string filePath, UserDictionary dictionary)
+    {
+        string json = File.ReadAllText(filePath);
+        PersonalDictionaryBundle? bundle = JsonSerializer.Deserialize<PersonalDictionaryBundle>(json, JsonOptions);
+        if (bundle is null)
+        {
+            return (0, 0);
+        }
+
+        int addedIgnored = 0;
+        if (bundle.IgnoredWords is not null)
+        {
+            foreach (string w in bundle.IgnoredWords)
+            {
+                if (dictionary.AddIgnoredWord(w))
+                {
+                    addedIgnored++;
+                }
+            }
+        }
+
+        int addedSnippets = 0;
+        if (bundle.CustomReplacements is not null)
+        {
+            foreach (var kv in bundle.CustomReplacements)
+            {
+                if (!string.IsNullOrWhiteSpace(kv.Key) && !string.IsNullOrEmpty(kv.Value))
+                {
+                    dictionary.SetCustomReplacement(kv.Key, kv.Value);
+                    addedSnippets++;
+                }
+            }
+        }
+
+        return (addedIgnored, addedSnippets);
     }
 }

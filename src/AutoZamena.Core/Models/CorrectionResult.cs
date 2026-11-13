@@ -12,7 +12,8 @@ public enum CorrectionKind
     AutoCapitalize = 7,
     WrongLayout = 8,
     HotkeyLayoutSwitch = 9,
-    UndoRestore = 10
+    UndoRestore = 10,
+    InvertedCaps = 11
 }
 
 /// <summary>
@@ -27,7 +28,8 @@ public sealed record CorrectionResult(
     char? TrailingDelimiter,
     TargetLanguage SwitchLayoutTo = TargetLanguage.None,
     double ConfidenceScore = 0.0,
-    string Reason = ""
+    string Reason = "",
+    bool TurnOffCapsLock = false
 )
 {
     public static readonly CorrectionResult NoChange = new(
@@ -53,7 +55,8 @@ public sealed record CorrectionResult(
         char? trailingDelimiter,
         TargetLanguage switchLayoutTo = TargetLanguage.None,
         double confidenceScore = 1.0,
-        string reason = "")
+        string reason = "",
+        bool turnOffCapsLock = false)
     {
         int common = CommonPrefixLength(onScreenBeforeCaret, desiredText);
         int backspaces = onScreenBeforeCaret.Length - common;
@@ -68,7 +71,8 @@ public sealed record CorrectionResult(
             trailingDelimiter,
             switchLayoutTo,
             confidenceScore,
-            reason
+            reason,
+            turnOffCapsLock
         );
     }
 

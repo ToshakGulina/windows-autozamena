@@ -58,16 +58,85 @@ public sealed class MechanicsAndLayoutTests
     }
 
     [Theory]
+    [InlineData("пРИВЕТ ", "Привет ")]
+    [InlineData("чТО ", "Что ")]
+    [InlineData("hELLO ", "Hello ")]
+    [InlineData("пРИВТЕ ", "Привет ")]
+    [InlineData("iOS ", "iOS ")]
+    [InlineData("mRNA ", "mRNA ")]
+    [InlineData("eSIM ", "eSIM ")]
+    [InlineData("кВт ", "кВт ")]
+    public void InvertedCapsLock_FixedAndRequestsCapsShutoffWithoutBreakingTechUnits(string input, string expected)
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal(expected, engine.SimulateText(input));
+
+        engine.ResetContext();
+        foreach (char c in "пРИВЕТ")
+        {
+            engine.OnCharacter(new KeyStrokeEvent(c));
+        }
+        CorrectionResult res = engine.OnWhitespace(' ');
+        Assert.Equal(CorrectionKind.InvertedCaps, res.Kind);
+        Assert.True(res.TurnOffCapsLock);
+        Assert.Equal("Привет", res.ReplacementText);
+    }
+
+    [Theory]
     [InlineData("ghbdtn ", "привет ")]
     [InlineData("k.,k. ", "люблю ")]
     [InlineData(";bpym ", "жизнь ")]
     [InlineData("[kt, ", "хлеб ")]
     [InlineData("\"njn ", "Этот ")]
+    [InlineData("'nj ", "это ")]
+    [InlineData("e;t ", "уже ")]
+    [InlineData(",tp ", "без ")]
+    [InlineData("ghbdnt ", "привет ")]
+    [InlineData("gj;fkecnf ", "пожалуйста ")]
+    [InlineData("xnjnj ", "что-то ")]
+    [InlineData("djpdhfgofncz ", "возвращаться ")]
     [InlineData("руддщ ", "hello ")]
-    public void WrongKeyboardLayout_AutoFixesHighConfidenceWordsIncludingPunctuationKeys(string input, string expected)
+    [InlineData("иусефыу ", "because ")]
+    [InlineData("hellp ", "hello ")]
+    public void WrongKeyboardLayout_AutoFixesExactAndTypoWordsAnd3CharPunctuationTokens(string input, string expected)
     {
         var engine = new AutoCorrectEngine();
         Assert.Equal(expected, engine.SimulateText(input));
+    }
+
+    [Theory]
+    [InlineData("z yt pyf. ", "я не знаю ")]
+    [InlineData("d ntktuhfvt ", "в телеграме ")]
+    [InlineData("rfr ltkf ", "как дела ")]
+    [InlineData("ok ghbdtn ", "ok привет ")]
+    public void WrongKeyboardLayout_RetroactivelyConvertsShortPrecedingPrepositionsAndPronouns(string input, string expected)
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal(expected, engine.SimulateText(input));
+    }
+
+    [Fact]
+    public void RetroactivePhraseWrongLayout_SupportsSingleKeyBackspaceUndo()
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal("z yt pyf.", engine.SimulateText("z yt pyf. \b"));
+    }
+
+    [Fact]
+    public void PhraseHotkeyLayoutConversion_ConvertsWholeLineWithoutClipboardAndTogglesBack()
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal("ye lf ", engine.SimulateText("ye lf "));
+
+        CorrectionResult toRu = engine.ConvertPhraseLayoutByHotkey();
+        Assert.True(toRu.HasChange);
+        Assert.Equal("ну да ", toRu.ReplacementText);
+        Assert.Equal(TargetLanguage.Russian, toRu.SwitchLayoutTo);
+
+        CorrectionResult backToEn = engine.ConvertPhraseLayoutByHotkey();
+        Assert.True(backToEn.HasChange);
+        Assert.Equal("ye lf ", backToEn.ReplacementText);
+        Assert.Equal(TargetLanguage.English, backToEn.SwitchLayoutTo);
     }
 
     [Fact]

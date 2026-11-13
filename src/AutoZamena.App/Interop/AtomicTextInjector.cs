@@ -34,6 +34,13 @@ internal static class AtomicTextInjector
             (result.BackspacesCount + result.AppendText.Length + 4) * 2
         );
 
+        // If user accidentally had Caps Lock ON ("пРИВЕТ" -> "Привет"), turn physical Caps Lock OFF in the same atomic batch!
+        if (result.TurnOffCapsLock && (NativeMethods.GetKeyState(NativeMethods.VK_CAPITAL) & 0x0001) != 0)
+        {
+            AddVkKey(inputs, NativeMethods.VK_CAPITAL, keyUp: false);
+            AddVkKey(inputs, NativeMethods.VK_CAPITAL, keyUp: true);
+        }
+
         // Temporarily release physical Shift if held so synthetic VK_BACK / VK_SPACE never act as Shift+Backspace
         bool lShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_LSHIFT) & 0x8000) != 0;
         bool rShiftDown = (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RSHIFT) & 0x8000) != 0;

@@ -8,7 +8,8 @@ public enum CasingKind
     Capitalized = 1,
     StickyDoubleCaps = 2,
     AllCaps = 3,
-    MixedCamel = 4
+    MixedCamel = 4,
+    InvertedCapsLock = 5
 }
 
 public static class TokenGuards
@@ -17,6 +18,40 @@ public static class TokenGuards
     {
         "МГц", "ГГц", "кГц", "ТГц", "МБайт", "ГБайт", "кБайт", "мАч", "кВт", "МВт", "ГВт"
     };
+
+    private static readonly HashSet<string> InvertedCapsAllowlist = new(StringComparer.Ordinal)
+    {
+        "iOS", "mRNA", "tRNA", "rRNA", "cDNA", "uEFI", "eSIM", "iGPU", "dGPU", "vCPU",
+        "кВт", "мВт", "кГц", "мГц", "кБ", "мБ", "дБ", "мА", "кВ", "мВ"
+    };
+
+    private static readonly HashSet<string> NonSentenceEndingAbbreviations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Russian standard abbreviations (т. д., т. п., т. е., г., ул., тыс., см., др. ...)
+        "гг", "вв", "ул", "пр", "пер", "бул", "наб", "пл", "кв", "корп", "стр", "оф",
+        "рис", "табл", "гл", "разд", "пп", "см", "ср", "им", "тыс", "млн", "млрд", "трлн",
+        "руб", "коп", "сек", "мин", "экз", "проф", "акад", "доц", "канд", "док", "др",
+        "обл", "пос", "гор", "тел",
+        // English standard abbreviations
+        "vs", "etc", "mr", "mrs", "ms", "dr", "prof", "inc", "ltd", "corp", "co",
+        "jr", "sr", "st", "ave", "blvd", "rd", "fig", "vol", "approx", "est", "dept"
+    };
+
+    public static bool IsAbbreviationBeforePeriod(ReadOnlySpan<char> token)
+    {
+        if (token.IsEmpty)
+        {
+            return false;
+        }
+
+        // Single Cyrillic letter + '.' (т., д., п., е., к., г., в., с. or initials) never forces next-word capitalization
+        if (token.Length == 1 && KeyboardGeometry.IsCyrillicLetter(token[0]))
+        {
+            return true;
+        }
+
+        return NonSentenceEndingAbbreviations.Contains(token.ToString());
+    }
 
     public static bool ContainsDisqualifyingSymbolOrDigit(ReadOnlySpan<char> span)
     {
@@ -91,14 +126,25 @@ public static class TokenGuards
                 tld.Equals("dev", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("ai", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("app", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("me", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("co", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("de", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("exe", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("dll", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("txt", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("md", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("json", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("yml", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("yaml", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("xml", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("html", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("css", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("cs", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("py", StringComparison.OrdinalIgnoreCase) ||
                 tld.Equals("js", StringComparison.OrdinalIgnoreCase) ||
-                tld.Equals("ts", StringComparison.OrdinalIgnoreCase))
+                tld.Equals("ts", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("go", StringComparison.OrdinalIgnoreCase) ||
+                tld.Equals("rs", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
@@ -148,6 +194,21 @@ public static class TokenGuards
             if (!StickyCapsUnitsAllowlist.Contains(str))
             {
                 return CasingKind.StickyDoubleCaps;
+            }
+        }
+
+        // Check xXXXX pattern (accidental Caps Lock + Shift on first char: пРИВЕТ, чТО, hELLO)
+        // Require >= 3 chars for Cyrillic and >= 4 chars for Latin so 3-char tech tags (iOS, eID, vDS) stay safe.
+        if (word.Length >= 3 &&
+            lowerCount == 1 &&
+            char.IsLower(word[0]) &&
+            upperCount >= 2 &&
+            (KeyboardGeometry.IsCyrillicLetter(word[0]) || word.Length >= 4))
+        {
+            string str = word.ToString();
+            if (!InvertedCapsAllowlist.Contains(str))
+            {
+                return CasingKind.InvertedCapsLock;
             }
         }
 
@@ -234,9 +295,15 @@ public static class TokenGuards
             return replacementLower;
         }
 
+        if (originalCasing == CasingKind.AllCaps)
+        {
+            return replacementLower.ToUpperInvariant();
+        }
+
         bool shouldCapitalize = forceCapitalize ||
                                 originalCasing == CasingKind.Capitalized ||
-                                originalCasing == CasingKind.StickyDoubleCaps;
+                                originalCasing == CasingKind.StickyDoubleCaps ||
+                                originalCasing == CasingKind.InvertedCapsLock;
 
         if (!shouldCapitalize)
         {

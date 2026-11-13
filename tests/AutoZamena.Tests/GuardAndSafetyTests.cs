@@ -1,6 +1,9 @@
+using System.IO;
 using System.Runtime.InteropServices;
+using AutoZamena.App.Config;
 using AutoZamena.App.Interop;
 using AutoZamena.Core.Engine;
+using AutoZamena.Core.Lexicon;
 using Xunit;
 
 namespace AutoZamena.Tests;
@@ -38,13 +41,57 @@ public sealed class GuardAndSafetyTests
     }
 
     [Fact]
-    public void UrlsEmailsCodeTokensFunctionCallsAndNumbers_AreNeverCorrupted()
+    public void UrlsEmailsDomainsFilenamesFunctionCallsAndNumbers_AreNeverCorrupted()
     {
         var engine = new AutoCorrectEngine();
         const string technical =
-            "https://github.com/ToshakGulina user@example.com AutoZamena.exe myfunc(привте) useState foo_bar win-x64 v2.4 ";
+            "https://github.com/ToshakGulina serega.ivanov@gmail.com andriod.com програма.exe привте.ru user.name AutoZamena.exe myfunc(привте) useState foo_bar win-x64 v2.4 ";
 
         Assert.Equal(technical, engine.SimulateText(technical));
+
+        // Meanwhile, an actual sentence ending with a period + space fixes the typo AND capitalizes the next word!
+        engine.ResetContext();
+        Assert.Equal("привет. На связи ", engine.SimulateText("привте. на связи "));
+    }
+
+    [Fact]
+    public void AbbreviationsBeforePeriod_DoNotTriggerFalseSentenceCapitalization()
+    {
+        var engine = new AutoCorrectEngine();
+        const string abbrevProse =
+            "и т. д. в этом случае и т. п. в 2026 г. на ул. мира около 10 тыс. человек см. выше vs. the dr. smith ";
+
+        Assert.Equal(abbrevProse, engine.SimulateText(abbrevProse));
+    }
+
+    [Fact]
+    public void PersonalDictionary_ExportAndImportRoundTripsCleanly()
+    {
+        var src = new UserDictionary();
+        src.AddIgnoredWord("кастомслово");
+        src.SetCustomReplacement("пжл", "пожалуйста");
+
+        string tmpFile = Path.Combine(Path.GetTempPath(), $"autozamena_dict_test_{Guid.NewGuid():N}.json");
+        try
+        {
+            AppConfig.ExportPersonalDictionary(tmpFile, src);
+
+            var dst = new UserDictionary();
+            (int addedIgn, int addedSnip) = AppConfig.ImportPersonalDictionary(tmpFile, dst);
+
+            Assert.Equal(1, addedIgn);
+            Assert.Equal(1, addedSnip);
+            Assert.True(dst.IsIgnored("кастомслово"));
+            Assert.True(dst.TryGetCustomReplacement("пжл", out string? repl));
+            Assert.Equal("пожалуйста", repl);
+        }
+        finally
+        {
+            if (File.Exists(tmpFile))
+            {
+                File.Delete(tmpFile);
+            }
+        }
     }
 
     [Fact]

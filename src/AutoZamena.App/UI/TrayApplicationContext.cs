@@ -26,6 +26,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly Icon _iconStandby;
     private readonly Icon _iconPaused;
     private readonly NotifyIcon _trayIcon;
+    private readonly ToolStripMenuItem _miSessionStats;
     private readonly ToolStripMenuItem _miTogglePause;
     private readonly ToolStripMenuItem _miExcludeLastApp;
     private readonly MainForm _mainForm;
@@ -33,6 +34,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private ContextStatus _currentContextStatus = ContextStatus.Allowed;
     private string _lastExternalProcess = string.Empty;
+    private int _sessionFixedCount;
 
     public TrayApplicationContext(bool startMinimized, EventWaitHandle? activateSignal = null)
     {
@@ -70,6 +72,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         // Build Tray Context Menu
         var menu = new ContextMenuStrip();
 
+        _miSessionStats = new ToolStripMenuItem("Исправлено за сессию: 0")
+        {
+            Enabled = false
+        };
+
         var miOpen = new ToolStripMenuItem("Открыть настройки и песочницу…")
         {
             Font = new Font("Segoe UI", 9f, FontStyle.Bold)
@@ -97,6 +104,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
         menu.Items.Add(miOpen);
         menu.Items.Add(_miTogglePause);
+        menu.Items.Add(_miSessionStats);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_miExcludeLastApp);
         menu.Items.Add(miStartup);
@@ -185,7 +193,15 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnCorrectionApplied(CorrectionHistoryEntry entry)
     {
-        _uiSyncContext.Post(_ => _mainForm.AppendHistoryEntry(entry), null);
+        _uiSyncContext.Post(_ =>
+        {
+            if (!entry.WasUndone)
+            {
+                _sessionFixedCount++;
+                _miSessionStats.Text = $"Исправлено за сессию: {_sessionFixedCount}";
+            }
+            _mainForm.AppendHistoryEntry(entry);
+        }, null);
     }
 
     private void OnContextStatusChanged(ContextStatus status, string procName)

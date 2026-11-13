@@ -31,6 +31,7 @@ internal sealed class MainForm : Form
     private ComboBox _cmbSensitivity = null!;
     private CheckBox _chkFixTypos = null!;
     private CheckBox _chkFixDoubleCaps = null!;
+    private CheckBox _chkFixInvertedCaps = null!;
     private CheckBox _chkFixRollover = null!;
     private CheckBox _chkAutoCapSentence = null!;
     private CheckBox _chkAutoCapFirst = null!;
@@ -317,15 +318,16 @@ internal sealed class MainForm : Form
 
         _chkFixTypos = CreateOptionCheck("Исправлять опечатки по геометрии клавиш, таймингам нажатий и контексту слов");
         _chkFixDoubleCaps = CreateOptionCheck("Исправлять залипший Shift в начале слова (ПРивет → Привет)");
+        _chkFixInvertedCaps = CreateOptionCheck("Исправлять случайный Caps Lock (пРИВЕТ → Привет) и автоматически выключать Caps Lock");
         _chkFixRollover = CreateOptionCheck("Склеивать слова, разорванные ранним пробелом (приве т → привет)");
-        _chkAutoCapSentence = CreateOptionCheck("Автоматически делать заглавной букву после точки, ! и ? (. на → . На)");
+        _chkAutoCapSentence = CreateOptionCheck("Автоматически делать заглавной букву после точки, ! и ? (. на → . На, с защитой т. д. / г.)");
         _chkAutoCapFirst = CreateOptionCheck("Делать заглавной первую букву в самом начале нового ввода");
         _chkUndoBackspace = CreateOptionCheck("Мгновенный откат автозамены одним нажатием Backspace сразу после пробела");
         _chkAutoLearnUndo = CreateOptionCheck("Автоматически запоминать отменённые слова в личный список исключений");
 
         flow.Controls.AddRange(new Control[]
         {
-            _chkFixTypos, _chkFixDoubleCaps, _chkFixRollover,
+            _chkFixTypos, _chkFixDoubleCaps, _chkFixInvertedCaps, _chkFixRollover,
             _chkAutoCapSentence, _chkAutoCapFirst, _chkUndoBackspace, _chkAutoLearnUndo
         });
 
@@ -650,7 +652,71 @@ internal sealed class MainForm : Form
         split.Panel2.Controls.Add(rightHeader);
         split.Panel2.Controls.Add(rightBottom);
 
+        var dictToolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 40,
+            FlowDirection = FlowDirection.RightToLeft,
+            Padding = new Padding(0, 6, 0, 0)
+        };
+
+        var btnImportDict = new Button { Text = "Импорт словаря…", Width = 145, Height = 28 };
+        btnImportDict.Click += (_, _) =>
+        {
+            using var dlg = new OpenFileDialog
+            {
+                Title = "Импорт личного словаря AutoZamena",
+                Filter = "JSON файлы (*.json)|*.json|Все файлы (*.*)|*.*"
+            };
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+            {
+                try
+                {
+                    (int ign, int snip) = AppConfig.ImportPersonalDictionary(dlg.FileName, _engine.UserDictionary);
+                    SyncDictionaryToConfigAndSave();
+                    RefreshDictionaryLists();
+                    MessageBox.Show(
+                        this,
+                        $"Импорт завершён: добавлено исключений — {ign}, своих автозамен — {snip}.",
+                        "Импорт словаря",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information
+                    );
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Не удалось прочитать файл словаря: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        };
+
+        var btnExportDict = new Button { Text = "Экспорт словаря…", Width = 145, Height = 28 };
+        btnExportDict.Click += (_, _) =>
+        {
+            using var dlg = new SaveFileDialog
+            {
+                Title = "Экспорт личного словаря AutoZamena",
+                Filter = "JSON файлы (*.json)|*.json",
+                FileName = "autozamena-dictionary.json"
+            };
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+            {
+                try
+                {
+                    AppConfig.ExportPersonalDictionary(dlg.FileName, _engine.UserDictionary);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, $"Не удалось сохранить файл словаря: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        };
+
+        dictToolbar.Controls.Add(btnImportDict);
+        dictToolbar.Controls.Add(btnExportDict);
+
         page.Controls.Add(split);
+        page.Controls.Add(dictToolbar);
         return page;
     }
 
@@ -698,11 +764,12 @@ internal sealed class MainForm : Form
         flow.Controls.Add(pauseRow);
 
         flow.Controls.Add(new Panel { Height = 20 });
-        flow.Controls.Add(CreateSectionHeader("Принудительная смена раскладки последнего слова (RU ↔ EN)"));
+        flow.Controls.Add(CreateSectionHeader("Принудительная смена раскладки слова или фразы (RU ↔ EN)"));
         flow.Controls.Add(new Label
         {
-            Text = "Переводит только что набранное слово в другую раскладку (даже короткое из 1–3 букв) и переключает язык ввода.",
+            Text = "Нажатие клавиши переводит последнее слово (даже из 1–3 букв). С зажатым Shift (например, Shift + Pause/Break) — всю набранную фразу на текущей строке без затрагивания буфера обмена!",
             AutoSize = true,
+            MaximumSize = new Size(720, 0),
             ForeColor = Color.FromArgb(90, 100, 110),
             Margin = new Padding(0, 0, 0, 8)
         });
@@ -866,6 +933,7 @@ internal sealed class MainForm : Form
             _cmbSensitivity.SelectedIndex = (int)s.Sensitivity;
             _chkFixTypos.Checked = s.FixTypos;
             _chkFixDoubleCaps.Checked = s.FixDoubleCaps;
+            _chkFixInvertedCaps.Checked = s.FixInvertedCaps;
             _chkFixRollover.Checked = s.FixSpacebarRollover;
             _chkAutoCapSentence.Checked = s.AutoCapitalizeAfterSentence;
             _chkAutoCapFirst.Checked = s.AutoCapitalizeFirstWord;
@@ -901,6 +969,7 @@ internal sealed class MainForm : Form
         s.Sensitivity = (SensitivityLevel)Math.Clamp(_cmbSensitivity.SelectedIndex, 0, 2);
         s.FixTypos = _chkFixTypos.Checked;
         s.FixDoubleCaps = _chkFixDoubleCaps.Checked;
+        s.FixInvertedCaps = _chkFixInvertedCaps.Checked;
         s.FixSpacebarRollover = _chkFixRollover.Checked;
         s.AutoCapitalizeAfterSentence = _chkAutoCapSentence.Checked;
         s.AutoCapitalizeFirstWord = _chkAutoCapFirst.Checked;

@@ -29,6 +29,7 @@ public sealed class EngineSettings
     // Core corrections & mechanics
     public bool FixTypos { get; set; } = true;
     public bool FixDoubleCaps { get; set; } = true;
+    public bool FixInvertedCaps { get; set; } = true;
     public bool FixSpacebarRollover { get; set; } = true;
     public bool AutoCapitalizeAfterSentence { get; set; } = true;
     public bool AutoCapitalizeFirstWord { get; set; } = false;
@@ -49,6 +50,7 @@ public sealed class EngineSettings
             Sensitivity = Sensitivity,
             FixTypos = FixTypos,
             FixDoubleCaps = FixDoubleCaps,
+            FixInvertedCaps = FixInvertedCaps,
             FixSpacebarRollover = FixSpacebarRollover,
             AutoCapitalizeAfterSentence = AutoCapitalizeAfterSentence,
             AutoCapitalizeFirstWord = AutoCapitalizeFirstWord,
