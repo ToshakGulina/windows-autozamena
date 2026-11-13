@@ -294,6 +294,13 @@ public sealed class LexiconDatabase
 
     public EnWordEntry GetEnEntryByIndex(int index) => _enEntries[index];
 
+    public float GetRuSurfaceBigramBoost(in RuWordEntry prevWord, in RuWordEntry nextWord)
+    {
+        return _ruSurfaceBigrams.TryGetValue(PackPair((uint)prevWord.Index, (uint)nextWord.Index), out float surf)
+            ? surf
+            : 0f;
+    }
+
     public float GetRuContextBoost(in RuWordEntry prevWord, in RuWordEntry candidate)
     {
         float boost = 0f;

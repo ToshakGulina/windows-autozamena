@@ -213,4 +213,61 @@ public sealed class MechanicsAndLayoutTests
         engine.ResetContext();
         Assert.Equal("привте ", engine.SimulateText("привте "));
     }
+
+    [Theory]
+    [InlineData("xnj ", "что ")]
+    [InlineData("rfr ", "как ")]
+    [InlineData("ytn ", "нет ")]
+    [InlineData("ult ", "где ")]
+    [InlineData("dct ", "все ")]
+    [InlineData("vyt ", "мне ")]
+    [InlineData("еру ", "the ")]
+    [InlineData("фтв ", "and ")]
+    [InlineData("ащк ", "for ")]
+    [InlineData("нщг ", "you ")]
+    [InlineData("нуы ", "yes ")]
+    [InlineData("вщтэе ", "don't ")]
+    [InlineData("шэь ", "I'm ")]
+    [InlineData("ше шы цщклштп ", "it is working ")]
+    [InlineData("ш лтщц ", "I know ")]
+    [InlineData("ghbdtn!", "привет!")]
+    [InlineData("руддщ!", "hello!")]
+    [InlineData("руддщ?", "hello?")]
+    [InlineData("руддщ,", "hello,")]
+    [InlineData("ghbdtnvbh ", "привет мир ")]
+    [InlineData("ерфтлнщг ", "thank you ")]
+    public void ExtendedWrongLayoutThreeLetterContractionsChainsPunctuationAndSplits_WorkCleanly(string input, string expected)
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal(expected, engine.SimulateText(input));
+    }
+
+    [Fact]
+    public void MouseClickBackspaceAndEnterFlows_PreserveFirstWordCorrectionAndMidWordSafety()
+    {
+        var engine = new AutoCorrectEngine();
+
+        // 1. Clicking into an input field and immediately typing a full word corrects the first word
+        engine.NotifyMouseClick();
+        Assert.Equal("привет ", engine.SimulateText("ghbdtn "));
+
+        // 2. Clicking inside an existing word and pressing Backspace before typing a 3-char suffix suppresses false fragment correction
+        engine.NotifyMouseClick();
+        engine.OnBackspace();
+        Assert.Equal("мма ", engine.SimulateText("мма "));
+        Assert.Equal("привет ", engine.SimulateText("привте "));
+
+        // 3. Backspacing across Space into a just-typed word tracks the full word on screen
+        engine.ResetContext();
+        Assert.Equal("программист ", engine.SimulateText("программа \b\bсит "));
+
+        // 4. Backspacing a slip inside the last word of a retroactive layout phrase still converts the whole phrase
+        engine.ResetContext();
+        Assert.Equal("я не знаю ", engine.SimulateText("z yt pyff\b. "));
+
+        // 5. Enter ('\r') and Shift+Enter ('\n') evaluate the pending word before the newline
+        engine.ResetContext();
+        Assert.Equal("привет\r", engine.SimulateText("ghbdtn\r"));
+        Assert.Equal("привет\n", engine.SimulateText("привте\n"));
+    }
 }

@@ -105,7 +105,7 @@ public sealed class LowLevelInputHook : IDisposable
                 _gestureTracker.OnMouseClick();
                 lock (_engineLock)
                 {
-                    _engine.NotifyPointerOrFocusChanged(suppressFragmentUntilDelimiter: true);
+                    _engine.NotifyMouseClick();
                 }
                 _contextGuard.NotifyPotentialFocusChange();
             }
@@ -317,8 +317,28 @@ public sealed class LowLevelInputHook : IDisposable
             return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
         }
 
-        // Navigation keys and Enter reset word buffer and pass through
-        if (IsNavigationVk(vk) || vk == NativeMethods.VK_RETURN)
+        int deltaMs = _lastKeyDownTick > 0 ? (int)Math.Clamp(nowMs - _lastKeyDownTick, 0, 10_000) : 500;
+        _lastKeyDownTick = nowMs;
+
+        if (vk == NativeMethods.VK_DELETE)
+        {
+            lock (_engineLock)
+            {
+                _engine.OnDeleteKey();
+            }
+            return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
+        }
+
+        if (vk is NativeMethods.VK_LEFT or NativeMethods.VK_RIGHT or NativeMethods.VK_HOME or NativeMethods.VK_END)
+        {
+            lock (_engineLock)
+            {
+                _engine.NotifyPointerOrFocusChanged(suppressFragmentUntilDelimiter: true);
+            }
+            return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
+        }
+
+        if (IsNavigationVk(vk))
         {
             lock (_engineLock)
             {
@@ -327,8 +347,25 @@ public sealed class LowLevelInputHook : IDisposable
             return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
         }
 
-        int deltaMs = _lastKeyDownTick > 0 ? (int)Math.Clamp(nowMs - _lastKeyDownTick, 0, 10_000) : 500;
-        _lastKeyDownTick = nowMs;
+        // Enter / Shift+Enter: evaluate pending word before newline or message submission
+        if (vk == NativeMethods.VK_RETURN)
+        {
+            char enterDelim = shift ? '\n' : '\r';
+            CorrectionResult enterRes;
+            lock (_engineLock)
+            {
+                enterRes = _engine.OnCharacter(new KeyStrokeEvent(enterDelim, deltaMs, overlapped, nowMs));
+            }
+
+            if (enterRes.HasChange)
+            {
+                AtomicTextInjector.Dispatch(enterRes);
+                NotifyCorrection(enterRes, procName, cfg.PlaySoundOnAutoSwitch);
+                return (IntPtr)1;
+            }
+
+            return NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
+        }
 
         // Backspace: check immediate single-key undo
         if (vk == NativeMethods.VK_BACK)

@@ -873,6 +873,9 @@ def main() -> None:
         en_surf_bi=en_surf_bi,
     )
 
+    import enrich_lexicon
+    enrich_lexicon.main()
+
 
 if __name__ == "__main__":
     main()

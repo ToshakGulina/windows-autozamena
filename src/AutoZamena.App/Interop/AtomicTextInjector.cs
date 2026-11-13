@@ -58,6 +58,7 @@ internal static class AtomicTextInjector
         AppendUnicodeString(inputs, result.AppendText);
 
         // 3. Trailing delimiter (when delimiter keystroke was swallowed for atomic replacement)
+        bool shiftRestoredEarly = false;
         if (result.TrailingDelimiter.HasValue)
         {
             char d = result.TrailingDelimiter.Value;
@@ -73,8 +74,22 @@ internal static class AtomicTextInjector
             }
             else if (d is '\r' or '\n')
             {
+                // Preserve Shift+Enter ('\n') vs plain Enter ('\r') so chat apps insert a newline instead of sending
+                if (d == '\n')
+                {
+                    if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: false);
+                    else if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: false);
+                    else AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: false);
+                    shiftRestoredEarly = lShiftDown || rShiftDown;
+                }
+
                 AddVkKey(inputs, NativeMethods.VK_RETURN, keyUp: false);
                 AddVkKey(inputs, NativeMethods.VK_RETURN, keyUp: true);
+
+                if (d == '\n' && !lShiftDown && !rShiftDown)
+                {
+                    AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: true);
+                }
             }
             else
             {
@@ -90,8 +105,11 @@ internal static class AtomicTextInjector
         }
 
         // Restore physical Shift state if user is still holding it for the next word
-        if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: false);
-        if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: false);
+        if (!shiftRestoredEarly)
+        {
+            if (lShiftDown) AddVkKey(inputs, NativeMethods.VK_LSHIFT, keyUp: false);
+            if (rShiftDown) AddVkKey(inputs, NativeMethods.VK_RSHIFT, keyUp: false);
+        }
 
         if (inputs.Count > 0)
         {
@@ -144,8 +162,7 @@ internal static class AtomicTextInjector
     public static TargetLanguage ToggleActiveWindowKeyboardLayout()
     {
         (IntPtr focusHwnd, IntPtr topHwnd, IntPtr activeHkl, _) = NativeMethods.GetActiveFocusAndLayout();
-        IntPtr targetHwnd = focusHwnd != IntPtr.Zero ? focusHwnd : topHwnd;
-        if (targetHwnd == IntPtr.Zero)
+        if (topHwnd == IntPtr.Zero && focusHwnd == IntPtr.Zero)
         {
             return TargetLanguage.None;
         }
@@ -170,7 +187,7 @@ internal static class AtomicTextInjector
                 ushort lid = (ushort)((ulong)hkls[i] & 0xFFFF);
                 if ((lid & 0x03FF) == desiredPrimary)
                 {
-                    NativeMethods.PostMessageW(targetHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, hkls[i]);
+                    PostLayoutChangeRequest(topHwnd, focusHwnd, hkls[i]);
                     return desiredOpposite;
                 }
             }
@@ -178,7 +195,7 @@ internal static class AtomicTextInjector
             // Fallback: cycle to next installed HKL
             int curIdx = Array.IndexOf(hkls, activeHkl);
             IntPtr nextHkl = hkls[(curIdx + 1) % hkls.Length];
-            NativeMethods.PostMessageW(targetHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, nextHkl);
+            PostLayoutChangeRequest(topHwnd, focusHwnd, nextHkl);
         }
 
         return desiredOpposite;
@@ -281,10 +298,19 @@ internal static class AtomicTextInjector
         }
 
         (IntPtr focusHwnd, IntPtr topHwnd, _, _) = NativeMethods.GetActiveFocusAndLayout();
-        IntPtr targetHwnd = focusHwnd != IntPtr.Zero ? focusHwnd : topHwnd;
-        if (targetHwnd != IntPtr.Zero)
+        PostLayoutChangeRequest(topHwnd, focusHwnd, matchedHkl);
+    }
+
+    private static void PostLayoutChangeRequest(IntPtr topHwnd, IntPtr focusHwnd, IntPtr hkl)
+    {
+        // Post to top-level window (required by Win32 DefWindowProcW) AND child focus window when distinct (XAML/CoreWindow)
+        if (topHwnd != IntPtr.Zero)
         {
-            NativeMethods.PostMessageW(targetHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, matchedHkl);
+            NativeMethods.PostMessageW(topHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, hkl);
+        }
+        if (focusHwnd != IntPtr.Zero && focusHwnd != topHwnd)
+        {
+            NativeMethods.PostMessageW(focusHwnd, NativeMethods.WM_INPUTLANGCHANGEREQUEST, IntPtr.Zero, hkl);
         }
     }
 

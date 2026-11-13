@@ -28,6 +28,7 @@ public sealed class EngineSettings
 
     // Core corrections & mechanics
     public bool FixTypos { get; set; } = true;
+    public bool SplitRunTogetherWords { get; set; } = true;
     public bool FixDoubleCaps { get; set; } = true;
     public bool FixInvertedCaps { get; set; } = true;
     public bool FixSpacebarRollover { get; set; } = true;
@@ -51,6 +52,7 @@ public sealed class EngineSettings
             Enabled = Enabled,
             Sensitivity = Sensitivity,
             FixTypos = FixTypos,
+            SplitRunTogetherWords = SplitRunTogetherWords,
             FixDoubleCaps = FixDoubleCaps,
             FixInvertedCaps = FixInvertedCaps,
             FixSpacebarRollover = FixSpacebarRollover,

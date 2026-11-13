@@ -29,6 +29,7 @@ internal sealed class MainForm : Form
     // Tab 1: General
     private ComboBox _cmbSensitivity = null!;
     private CheckBox _chkFixTypos = null!;
+    private CheckBox _chkSplitRunTogether = null!;
     private CheckBox _chkFixDoubleCaps = null!;
     private CheckBox _chkFixInvertedCaps = null!;
     private CheckBox _chkFixRollover = null!;
@@ -341,6 +342,7 @@ internal sealed class MainForm : Form
         flow.Controls.Add(CreateSectionHeader("Автозамена и набор"));
 
         _chkFixTypos = CreateOptionCheck("Исправлять опечатки по геометрии клавиш и контексту");
+        _chkSplitRunTogether = CreateOptionCheck("Разделять случайно слитые слова (приветмир → привет мир, неработает → не работает)");
         _chkFixDoubleCaps = CreateOptionCheck("Исправлять две заглавные в начале слова (ПРивет → Привет)");
         _chkFixInvertedCaps = CreateOptionCheck("Исправлять перевёрнутый регистр и выключать Caps Lock (пРИВЕТ → Привет)");
         _chkFixRollover = CreateOptionCheck("Склеивать слова, разорванные пробелом (приве т → привет)");
@@ -353,7 +355,7 @@ internal sealed class MainForm : Form
 
         flow.Controls.AddRange(new Control[]
         {
-            _chkFixTypos, _chkFixDoubleCaps, _chkFixInvertedCaps, _chkFixRollover,
+            _chkFixTypos, _chkSplitRunTogether, _chkFixDoubleCaps, _chkFixInvertedCaps, _chkFixRollover,
             _chkAutoCapSentence, _chkAutoCapFirst, _chkDoubleSpacePeriod, _chkSmartTypography,
             _chkUndoBackspace, _chkAutoLearnUndo
         });
@@ -1028,6 +1030,7 @@ internal sealed class MainForm : Form
             EngineSettings s = _config.Engine;
             _cmbSensitivity.SelectedIndex = (int)s.Sensitivity;
             _chkFixTypos.Checked = s.FixTypos;
+            _chkSplitRunTogether.Checked = s.SplitRunTogetherWords;
             _chkFixDoubleCaps.Checked = s.FixDoubleCaps;
             _chkFixInvertedCaps.Checked = s.FixInvertedCaps;
             _chkFixRollover.Checked = s.FixSpacebarRollover;
@@ -1073,6 +1076,7 @@ internal sealed class MainForm : Form
         EngineSettings s = _config.Engine;
         s.Sensitivity = (SensitivityLevel)Math.Clamp(_cmbSensitivity.SelectedIndex, 0, 2);
         s.FixTypos = _chkFixTypos.Checked;
+        s.SplitRunTogetherWords = _chkSplitRunTogether.Checked;
         s.FixDoubleCaps = _chkFixDoubleCaps.Checked;
         s.FixInvertedCaps = _chkFixInvertedCaps.Checked;
         s.FixSpacebarRollover = _chkFixRollover.Checked;
