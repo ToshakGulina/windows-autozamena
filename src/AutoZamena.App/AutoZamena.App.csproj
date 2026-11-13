@@ -11,9 +11,16 @@
     <AssemblyName>AutoZamena</AssemblyName>
     <RootNamespace>AutoZamena.App</RootNamespace>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Version>1.0.0</Version>
-    <Product>AutoZamena — Умная автозамена для Windows</Product>
-    <Description>Мгновенное исправление опечаток на ПК по геометрии клавиш, таймингам и контексту</Description>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Authors>ToshakGulina</Authors>
+    <Company>AutoZamena Project</Company>
+    <Product>AutoZamena</Product>
+    <Description>Умная автозамена опечаток на лету и автопереключатель раскладки RU ↔ EN для Windows</Description>
+    <Copyright>Copyright © 2026 ToshakGulina (MIT License)</Copyright>
+    <RepositoryUrl>https://github.com/ToshakGulina/windows-autozamena</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
