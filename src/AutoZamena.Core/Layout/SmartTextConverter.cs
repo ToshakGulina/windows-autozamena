@@ -509,7 +509,7 @@ public static class SmartTextConverter
         if (chunk.Length >= 2 && chunk[^1] == ',' &&
             nextNonSpace.Length > 0 && KeyboardGeometry.IsCyrillicLetter(nextNonSpace[0]) && char.IsLower(nextNonSpace[0]))
         {
-            return KeyboardGeometry.ConvertRuToEn(chunk[..^1]) + ",";
+            return KeyboardGeometry.ConvertRuToEn(chunk.AsSpan(0, chunk.Length - 1)) + ",";
         }
 
         return KeyboardGeometry.ConvertRuToEn(chunk);

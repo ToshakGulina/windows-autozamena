@@ -17,78 +17,46 @@ public sealed class CarambaAndSmartFeaturesTests
         var tracker = new CarambaGestureTracker();
 
         // 1. Double Shift within 420ms -> CarambaGesture.DoubleShift
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LSHIFT, false, 1000));
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(NativeMethods.VK_LSHIFT, 1080, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: false, enableDoubleCtrl: true)
-        );
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LSHIFT, false, 1210));
-        Assert.Equal(
-            CarambaGesture.DoubleShift,
-            tracker.OnKeyUp(NativeMethods.VK_LSHIFT, 1290, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: false, enableDoubleCtrl: true)
-        );
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, true, 1000, false, true, true, false, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, false, 1080, false, true, true, false, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, true, 1210, false, true, true, false, true));
+        Assert.Equal(CarambaGesture.DoubleShift, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, false, 1290, false, true, true, false, true));
 
-        // 2. Left Shift + Right Shift simultaneously -> CarambaGesture.BothShiftsTogglePause on release
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LSHIFT, false, 2000));
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_RSHIFT, false, 2040));
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(NativeMethods.VK_RSHIFT, 2110, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
-        Assert.Equal(
-            CarambaGesture.BothShiftsTogglePause,
-            tracker.OnKeyUp(NativeMethods.VK_LSHIFT, 2130, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
+        // 2. Left Shift + Right Shift simultaneously -> CarambaGesture.BothShiftsTogglePause on first release, None on second
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, true, 2000, false, true, true, true, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_RSHIFT, true, 2040, false, true, true, true, true));
+        Assert.Equal(CarambaGesture.BothShiftsTogglePause, tracker.ProcessModifierEvent(NativeMethods.VK_RSHIFT, false, 2110, false, true, true, true, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, false, 2130, false, true, true, true, true));
 
         // 3. Typing a capital letter (Shift + 'A') NEVER triggers SingleShift or DoubleShift!
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LSHIFT, false, 3000));
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(0x41 /* 'A' */, false, 3040));
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(0x41, 3090, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(NativeMethods.VK_LSHIFT, 3120, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, true, 3000, false, true, true, true, true));
+        tracker.OnNonModifierKeyDown();
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, false, 3120, false, true, true, true, true));
 
         // 4. Alt + Shift OS shortcut NEVER triggers SingleShift!
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LMENU, false, 4000));
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LSHIFT, true, 4050));
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(NativeMethods.VK_LSHIFT, 4110, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(NativeMethods.VK_LMENU, 4140, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LMENU, true, 4000, true, true, true, true, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, true, 4050, true, true, true, true, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, false, 4110, true, true, true, true, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LMENU, false, 4140, false, true, true, true, true));
 
         // 5. Shift + Mouse Click selection NEVER triggers SingleShift!
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LSHIFT, false, 5000));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, true, 5000, false, true, true, true, true));
         tracker.OnMouseClick();
-        Assert.Equal(
-            CarambaGesture.None,
-            tracker.OnKeyUp(NativeMethods.VK_LSHIFT, 5120, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LSHIFT, false, 5120, false, true, true, true, true));
 
         // 6. Clean Single Shift tap when enabled -> CarambaGesture.SingleShift
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_RSHIFT, false, 6000));
-        Assert.Equal(
-            CarambaGesture.SingleShift,
-            tracker.OnKeyUp(NativeMethods.VK_RSHIFT, 6085, enableDoubleShift: true, enableBothShiftsPause: true, enableSingleShift: true, enableDoubleCtrl: true)
-        );
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_RSHIFT, true, 6000, false, true, true, true, true));
+        Assert.Equal(CarambaGesture.SingleShift, tracker.ProcessModifierEvent(NativeMethods.VK_RSHIFT, false, 6085, false, true, true, true, true));
 
         // 7. Double Ctrl -> CarambaGesture.DoubleCtrl, whereas Ctrl+C -> None
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(NativeMethods.VK_LCONTROL, false, 7000));
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyDown(0x43 /* 'C' */, false, 7040));
-        tracker.OnKeyUp(0x43, 7080, true, true, false, true);
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyUp(NativeMethods.VK_LCONTROL, 7110, true, true, false, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LCONTROL, true, 7000, false, true, true, false, true));
+        tracker.OnNonModifierKeyDown();
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LCONTROL, false, 7110, false, true, true, false, true));
 
-        tracker.OnKeyDown(NativeMethods.VK_LCONTROL, false, 8000);
-        Assert.Equal(CarambaGesture.None, tracker.OnKeyUp(NativeMethods.VK_LCONTROL, 8070, true, true, false, true));
-        tracker.OnKeyDown(NativeMethods.VK_LCONTROL, false, 8180);
-        Assert.Equal(CarambaGesture.DoubleCtrl, tracker.OnKeyUp(NativeMethods.VK_LCONTROL, 8250, true, true, false, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LCONTROL, true, 8000, false, true, true, false, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LCONTROL, false, 8070, false, true, true, false, true));
+        Assert.Equal(CarambaGesture.None, tracker.ProcessModifierEvent(NativeMethods.VK_LCONTROL, true, 8180, false, true, true, false, true));
+        Assert.Equal(CarambaGesture.DoubleCtrl, tracker.ProcessModifierEvent(NativeMethods.VK_LCONTROL, false, 8250, false, true, true, false, true));
     }
 
     [Fact]
