@@ -45,6 +45,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly UpdateService _updates = new();
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly System.Windows.Forms.Timer _updateTimer;
+    private readonly ToolStripMenuItem _miCheckUpdates;
+    private bool _checkingUpdate;
     private readonly RegisteredWaitHandle? _activateWaitRegistration;
 
     private ContextStatus _currentContextStatus = ContextStatus.Allowed;
@@ -155,6 +157,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         miStartup.CheckedChanged += (_, _) => StartupManager.SetStartupEnabled(miStartup.Checked);
 
+        _miCheckUpdates = new ToolStripMenuItem("Проверить обновления…");
+        _miCheckUpdates.Click += (_, _) => _ = CheckUpdatesAsync(manual: true);
+
         var miExit = new ToolStripMenuItem("Выход");
         miExit.Click += (_, _) => ExitCleanly();
 
@@ -169,6 +174,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_miExcludeLastApp);
         menu.Items.Add(miStartup);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_miCheckUpdates);
         menu.Items.Add(miExit);
 
         _trayIcon = new NotifyIcon
@@ -197,12 +203,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _layoutPollTimer.Start();
 
-        // One non-blocking check shortly after startup; never poll or recheck from the menu.
+        // One automatic non-blocking check shortly after startup; no periodic polling.
         _updateTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         _updateTimer.Tick += (_, _) =>
         {
             _updateTimer.Stop();
-            _ = CheckUpdatesAsync();
+            _ = CheckUpdatesAsync(manual: false);
         };
         _updateTimer.Start();
 
@@ -422,15 +428,27 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _trayIcon.Text = tip.Length <= 63 ? tip : tip[..63];
     }
 
-    private async System.Threading.Tasks.Task CheckUpdatesAsync()
+    private async System.Threading.Tasks.Task CheckUpdatesAsync(bool manual)
     {
+        // The menu and the one-shot startup timer share this path. Never issue
+        // simultaneous requests or show two update prompts for the same launch.
+        if (_checkingUpdate || _updateCancellation.IsCancellationRequested) return;
+        if (manual) _updateTimer.Stop(); // manual check replaces the pending startup check
+        _checkingUpdate = true;
+        _miCheckUpdates.Enabled = false;
         string? stagedDirectory = null;
         bool installationRequested = false;
         try
         {
             UpdateInfo? info = await _updates.CheckAsync(_updateCancellation.Token);
-            if (info is null) return;
             if (_updateCancellation.IsCancellationRequested) return;
+            if (info is null)
+            {
+                if (manual)
+                    MessageBox.Show("Установлена последняя версия AutoZamena.",
+                        "Обновления", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             DialogResult choice = MessageBox.Show(
                 $"Доступна AutoZamena {info.Version}. Скачать и установить обновление сейчас?" +
                 (UpdateService.IsPortable ? "\nПортативная версия будет перезапущена, настройки сохранятся." :
@@ -456,9 +474,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         catch (OperationCanceledException) when (_updateCancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            // An offline startup stays quiet, but a failed user-approved install should be reported.
-            if (!_updateCancellation.IsCancellationRequested && installationRequested)
-                MessageBox.Show($"Не удалось обновить AutoZamena: {ex.Message}",
+            // Offline startup stays quiet; explicit checks and failed installs report errors.
+            if (!_updateCancellation.IsCancellationRequested && (manual || installationRequested))
+                MessageBox.Show($"Не удалось проверить или установить обновление: {ex.Message}",
                     "Обновление", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
         finally
@@ -467,6 +485,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 try { Directory.Delete(stagedDirectory, recursive: true); } catch { }
             }
+            _checkingUpdate = false;
+            if (!_updateCancellation.IsCancellationRequested)
+                _miCheckUpdates.Enabled = true;
         }
     }
 
