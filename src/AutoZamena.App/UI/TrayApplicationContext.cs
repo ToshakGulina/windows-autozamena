@@ -88,7 +88,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
             _engine,
             _hook,
             _windowIcon,
-            onConfigUpdated: OnConfigUpdatedFromUi
+            onConfigUpdated: OnConfigUpdatedFromUi,
+            onCheckUpdates: () => _ = CheckUpdatesAsync(manual: true)
         );
 
         _contextGuard.IsOwnSandboxFocused = () => _mainForm.IsSandboxInputFocused;
