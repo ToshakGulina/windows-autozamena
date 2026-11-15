@@ -45,8 +45,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly UpdateService _updates = new();
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly System.Windows.Forms.Timer _updateTimer;
-    private readonly ToolStripMenuItem _miCheckUpdates;
-    private bool _checkingUpdate;
     private readonly RegisteredWaitHandle? _activateWaitRegistration;
 
     private ContextStatus _currentContextStatus = ContextStatus.Allowed;
@@ -157,9 +155,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         miStartup.CheckedChanged += (_, _) => StartupManager.SetStartupEnabled(miStartup.Checked);
 
-        _miCheckUpdates = new ToolStripMenuItem("Проверить обновления…");
-        _miCheckUpdates.Click += (_, _) => _ = CheckUpdatesAsync(manual: true);
-
         var miExit = new ToolStripMenuItem("Выход");
         miExit.Click += (_, _) => ExitCleanly();
 
@@ -174,7 +169,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(_miExcludeLastApp);
         menu.Items.Add(miStartup);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(_miCheckUpdates);
         menu.Items.Add(miExit);
 
         _trayIcon = new NotifyIcon
@@ -203,12 +197,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _layoutPollTimer.Start();
 
-        // Only one background check per launch. Network activity never blocks the keyboard hook.
-        _updateTimer = new System.Windows.Forms.Timer { Interval = 15000 };
+        // One non-blocking check shortly after startup; never poll or recheck from the menu.
+        _updateTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         _updateTimer.Tick += (_, _) =>
         {
             _updateTimer.Stop();
-            _ = CheckUpdatesAsync(manual: false);
+            _ = CheckUpdatesAsync();
         };
         _updateTimer.Start();
 
@@ -428,21 +422,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _trayIcon.Text = tip.Length <= 63 ? tip : tip[..63];
     }
 
-    private async System.Threading.Tasks.Task CheckUpdatesAsync(bool manual)
+    private async System.Threading.Tasks.Task CheckUpdatesAsync()
     {
-        if (_checkingUpdate) return;
-        _checkingUpdate = true;
-        _miCheckUpdates.Enabled = false;
         string? stagedDirectory = null;
+        bool installationRequested = false;
         try
         {
             UpdateInfo? info = await _updates.CheckAsync(_updateCancellation.Token);
-            if (info is null)
-            {
-                if (manual) MessageBox.Show("Установлена последняя версия AutoZamena.",
-                    "Обновления", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                return;
-            }
+            if (info is null) return;
             if (_updateCancellation.IsCancellationRequested) return;
             DialogResult choice = MessageBox.Show(
                 $"Доступна AutoZamena {info.Version}. Скачать и установить обновление сейчас?" +
@@ -450,6 +437,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                     "\nПриложение будет закрыто для запуска установщика. Настройки сохранятся."),
                 "Обновление AutoZamena", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (choice != DialogResult.Yes) return;
+            installationRequested = true;
 
             // Do not download into an unwritable portable directory and leave the app unable to update.
             if (UpdateService.IsPortable)
@@ -458,7 +446,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 try { File.WriteAllText(probe, ""); }
                 finally { if (File.Exists(probe)) File.Delete(probe); }
             }
-            _miCheckUpdates.Text = "Загрузка обновления…";
             var downloaded = await _updates.DownloadAsync(info, _updateCancellation.Token);
             stagedDirectory = downloaded.Directory;
             if (_updateCancellation.IsCancellationRequested) return;
@@ -469,7 +456,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         catch (OperationCanceledException) when (_updateCancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
-            if (!_updateCancellation.IsCancellationRequested && manual)
+            // An offline startup stays quiet, but a failed user-approved install should be reported.
+            if (!_updateCancellation.IsCancellationRequested && installationRequested)
                 MessageBox.Show($"Не удалось обновить AutoZamena: {ex.Message}",
                     "Обновление", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
@@ -478,12 +466,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
             if (stagedDirectory is not null)
             {
                 try { Directory.Delete(stagedDirectory, recursive: true); } catch { }
-            }
-            _checkingUpdate = false;
-            if (!_updateCancellation.IsCancellationRequested)
-            {
-                _miCheckUpdates.Text = "Проверить обновления…";
-                _miCheckUpdates.Enabled = true;
             }
         }
     }
