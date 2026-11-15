@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Windows.Forms;
@@ -714,18 +715,35 @@ internal sealed class MainForm : Form
             using var dlg = new OpenFileDialog
             {
                 Title = "Импорт словаря",
-                Filter = "JSON файлы (*.json)|*.json|Все файлы (*.*)|*.*"
+                Filter = "Словарь AutoZamena (*.json)|*.json|Слова SwiftKey (vocabulary.txt)|*.txt|Все файлы (*.*)|*.*"
             };
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
                 try
                 {
-                    (int ign, int snip) = AppConfig.ImportPersonalDictionary(dlg.FileName, _engine.UserDictionary);
+                    if (string.Equals(Path.GetExtension(dlg.FileName), ".lm", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException("dynamic.lm — бинарная модель SwiftKey. Её безопасный импорт и экспорт не поддерживаются. Выберите vocabulary.txt.");
+                    bool swiftKey = string.Equals(Path.GetExtension(dlg.FileName), ".txt", StringComparison.OrdinalIgnoreCase);
+                    if (swiftKey && MessageBox.Show(this,
+                        "Добавить отдельные слова из vocabulary.txt в исключения AutoZamena? Это НЕ переносит частоты, фразы или подсказки SwiftKey.",
+                        "Импорт SwiftKey", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                        return;
+                    int ign, snip;
+                    if (swiftKey)
+                    {
+                        ign = SwiftKeyVocabulary.Import(dlg.FileName, _engine.UserDictionary);
+                        snip = 0;
+                    }
+                    else
+                    {
+                        (ign, snip) = AppConfig.ImportPersonalDictionary(dlg.FileName, _engine.UserDictionary);
+                    }
                     SyncDictionaryToConfigAndSave();
                     RefreshDictionaryLists();
                     MessageBox.Show(
                         this,
-                        $"Добавлено исключений: {ign}, замен: {snip}.",
+                        $"Добавлено исключений: {ign}, замен: {snip}." +
+                        (swiftKey ? " Слова защищены от автозамены; модель подсказок не импортирована." : ""),
                         "Импорт словаря",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information
@@ -744,14 +762,26 @@ internal sealed class MainForm : Form
             using var dlg = new SaveFileDialog
             {
                 Title = "Экспорт словаря",
-                Filter = "JSON файлы (*.json)|*.json",
-                FileName = "autozamena-dictionary.json"
+                Filter = "Словарь AutoZamena (*.json)|*.json|Список слов (*.txt)|*.txt",
+                FileName = "autozamena-dictionary",
+                AddExtension = true
             };
             if (dlg.ShowDialog(this) == DialogResult.OK)
             {
                 try
                 {
-                    AppConfig.ExportPersonalDictionary(dlg.FileName, _engine.UserDictionary);
+                    if (dlg.FilterIndex == 2)
+                    {
+                        if (MessageBox.Show(this,
+                            "Сохранить список слов в формате vocabulary.txt? SwiftKey НЕ импортирует этот файл обратно: подсказки клавиатуры не изменятся. Продолжить?",
+                            "Экспорт слов", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                            return;
+                        SwiftKeyVocabulary.Export(dlg.FileName, _engine.UserDictionary);
+                    }
+                    else
+                    {
+                        AppConfig.ExportPersonalDictionary(dlg.FileName, _engine.UserDictionary);
+                    }
                 }
                 catch (Exception ex)
                 {
