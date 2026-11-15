@@ -2,12 +2,11 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
-using System.Reflection;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Win32;
 
 namespace AutoZamena.App.Updates;
 
@@ -22,7 +21,28 @@ internal sealed class UpdateService : IDisposable
     private readonly HttpClient _http;
 
     internal static readonly Version CurrentVersion = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 0);
-    internal static readonly bool IsPortable = File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.flag"));
+    // Standalone binaries, including those without portable.flag, are updated in place.
+    // An Inno install uses its existing installer so it retains uninstall metadata and shortcuts.
+    internal static readonly bool IsPortable = DetectPortable();
+
+    private static bool DetectPortable()
+    {
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, "portable.flag"))) return true;
+        const string uninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{8E9D412C-6F52-4A91-9D3E-7C508FFF0E01}_is1";
+        foreach (RegistryKey root in new[] { Registry.CurrentUser, Registry.LocalMachine })
+        {
+            try
+            {
+                using RegistryKey? key = root.OpenSubKey(uninstallKey);
+                if (key?.GetValue("InstallLocation") is string location &&
+                    string.Equals(Path.GetFullPath(location).TrimEnd(Path.DirectorySeparatorChar),
+                        AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar),
+                        StringComparison.OrdinalIgnoreCase)) return false;
+            }
+            catch (Exception) { /* Unregistered or inaccessible installation: treat as standalone. */ }
+        }
+        return true;
+    }
 
     public UpdateService()
     {
