@@ -63,6 +63,19 @@ public sealed class UserDictionary
         return added;
     }
 
+    /// <summary>Adds words in a batch and raises one change notification for a single save.</summary>
+    public int AddIgnoredWords(IEnumerable<string> words)
+    {
+        int added = 0;
+        foreach (string word in words)
+        {
+            if (!string.IsNullOrWhiteSpace(word) && _ignoredWords.TryAdd(word.Trim(), 1))
+                added++;
+        }
+        if (added > 0) Changed?.Invoke();
+        return added;
+    }
+
     public bool RemoveIgnoredWord(string word)
     {
         if (string.IsNullOrWhiteSpace(word))
