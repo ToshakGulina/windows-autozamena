@@ -18,7 +18,10 @@ internal sealed class MainForm : Form
     private readonly AutoCorrectEngine _engine;
     private readonly LowLevelInputHook _hook;
     private readonly Action _onConfigUpdated;
+    private readonly Action _onCheckUpdates;
     private readonly SynchronizationContext _uiSyncContext;
+    private static readonly string DisplayVersion =
+        typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "неизвестна";
 
     private bool _suppressEvents;
     private bool _allowRealClose;
@@ -86,16 +89,18 @@ internal sealed class MainForm : Form
         AutoCorrectEngine engine,
         LowLevelInputHook hook,
         Icon appIcon,
-        Action onConfigUpdated)
+        Action onConfigUpdated,
+        Action onCheckUpdates)
     {
         _config = config;
         _engine = engine;
         _hook = hook;
         _onConfigUpdated = onConfigUpdated;
+        _onCheckUpdates = onCheckUpdates;
         _uiSyncContext = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
         Icon = appIcon;
-        Text = "AutoZamena";
+        Text = $"AutoZamena — v{DisplayVersion}";
         Size = new Size(800, 640);
         MinimumSize = new Size(720, 560);
         StartPosition = FormStartPosition.CenterScreen;
@@ -149,8 +154,8 @@ internal sealed class MainForm : Form
             : Color.FromArgb(180, 83, 9);
 
         _lblStatusTitle.Text = enabled
-            ? "●  Работает"
-            : "●  На паузе";
+            ? $"●  Работает   ·   AutoZamena v{DisplayVersion}"
+            : $"●  На паузе   ·   AutoZamena v{DisplayVersion}";
 
         string pauseHint = _config.UseBothShiftsPause
             ? "Левый + Правый Shift"
@@ -331,6 +336,15 @@ internal sealed class MainForm : Form
             WrapContents = false,
             AutoScroll = true
         };
+
+        var updateButton = new Button
+        {
+            Text = "Проверить обновления…",
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 12)
+        };
+        updateButton.Click += (_, _) => _onCheckUpdates();
+        flow.Controls.Add(updateButton);
 
         var sensPanel = new FlowLayoutPanel
         {
