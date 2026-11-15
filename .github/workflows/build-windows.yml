@@ -53,6 +53,15 @@ jobs:
           "release_tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "AppVersion=$ver, ReleaseTag=$tag"
 
+      - name: Validate version-specific release notes
+        shell: pwsh
+        run: |
+          $path = "release-notes/v${{ steps.meta.outputs.version }}.md"
+          if (-not (Test-Path -LiteralPath $path) -or
+              [string]::IsNullOrWhiteSpace((Get-Content -LiteralPath $path -Raw -Encoding UTF8))) {
+            throw "Add nonempty version-specific release notes at $path before building this version."
+          }
+
       - name: Restore dependencies
         run: dotnet restore AutoZamena.sln
 
@@ -178,28 +187,26 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.meta.outputs.release_tag }}"
+          $changesPath = "release-notes/$tag.md"
+          if (-not (Test-Path -LiteralPath $changesPath)) {
+            throw "Missing version-specific release notes: $changesPath. Add them before publishing."
+          }
+          $changes = Get-Content -LiteralPath $changesPath -Raw -Encoding UTF8
+          if ([string]::IsNullOrWhiteSpace($changes)) { throw "Release notes are empty: $changesPath" }
 
-          $notes = @"
+          $downloads = @'
           ### Загрузки для Windows 10 / 11 (x64)
 
           | Файл | Описание |
           |---|---|
-          | **[AutoZamena-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Setup-win-x64.exe)** | Полный установщик (автономный, не требует установки .NET и прав администратора) |
-          | [AutoZamena-Light-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Light-Setup-win-x64.exe) | Облегчённый установщик (требуется установленный `.NET 8 Desktop Runtime x64`) |
-          | [AutoZamena-Portable-win-x64.zip](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Portable-win-x64.zip) | Портативный архив с `portable.flag` (хранит `config.json` рядом с `AutoZamena.exe`) |
-          | [AutoZamena-Standalone-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/$tag/AutoZamena-Standalone-win-x64.exe) | Автономный исполняемый файл без установщика |
-
-          ### Основные возможности
-          - Исправление опечаток при наборе с учётом геометрии раскладок ЙЦУКЕН и QWERTY, транспозиций и контекста биграмм.
-          - Автоматическое разделение случайно слитых слов и расстановка пропущенных дефисов частиц (`приветмир` → `привет мир`, `неработает` → `не работает`, `откуданибудь` → `откуда-нибудь`).
-          - Автоматическое и ручное переключение раскладки `RU <-> EN` для отдельных слов, ретроактивных фраз, знаков препинания и доменных имён.
-          - Управление клавишами-модификаторами: `2x Shift` (перевод последнего слова, выделенного фрагмента или отмена переключения), `Левый + Правый Shift` (пауза), `2x Ctrl` (перевод строки), опциональный `1x Shift` (смена раскладки).
-          - Исправление случайного `Caps Lock` и двух заглавных букв в начале слова, склейка слов после сдвинутого пробела, пользовательский словарь исключений и текстовых замен.
-          - Автоматическое отключение в IDE, терминалах, полноэкранных 3D-приложениях и полях ввода паролей. Автозамена работает локально; для проверки и загрузки обновлений используется GitHub.
-          - Фоновая проверка новых стабильных версий, подтверждение установки пользователем и проверка контрольной суммы SHA-256.
+          | **[AutoZamena-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/__TAG__/AutoZamena-Setup-win-x64.exe)** | Полный установщик (автономный, не требует установки .NET и прав администратора) |
+          | [AutoZamena-Light-Setup-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/__TAG__/AutoZamena-Light-Setup-win-x64.exe) | Облегчённый установщик (требуется установленный `.NET 8 Desktop Runtime x64`) |
+          | [AutoZamena-Portable-win-x64.zip](https://github.com/ToshakGulina/windows-autozamena/releases/download/__TAG__/AutoZamena-Portable-win-x64.zip) | Портативный архив с `portable.flag` (хранит `config.json` рядом с `AutoZamena.exe`) |
+          | [AutoZamena-Standalone-win-x64.exe](https://github.com/ToshakGulina/windows-autozamena/releases/download/__TAG__/AutoZamena-Standalone-win-x64.exe) | Автономный исполняемый файл без установщика |
 
           Контрольные суммы SHA-256 приведены в файле `SHA256SUMS.txt`.
-          "@
+          '@
+          $notes = $changes.TrimEnd() + "`r`n`r`n" + $downloads.Replace('__TAG__', $tag)
           $notes | Set-Content -Path release_notes.md -Encoding UTF8
 
           $prevEap = $ErrorActionPreference
@@ -210,10 +217,16 @@ jobs:
 
           $files = Get-ChildItem artifacts/* | ForEach-Object { $_.FullName }
           if ($releaseExists) {
-            gh release upload $tag @files --clobber
-            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
-            gh release edit $tag --title "AutoZamena $tag" --notes-file release_notes.md
-            if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
+            # A normal main push must not overwrite published binaries or hand-edited release notes.
+            # An explicit workflow dispatch or tag push can republish on request.
+            if ("${{ github.event_name }}" -eq "workflow_dispatch" -or "${{ github.ref }}" -like "refs/tags/v*") {
+              gh release upload $tag @files --clobber
+              if ($LASTEXITCODE -ne 0) { throw "gh release upload failed" }
+              gh release edit $tag --title "AutoZamena $tag" --notes-file release_notes.md
+              if ($LASTEXITCODE -ne 0) { throw "gh release edit failed" }
+            } else {
+              Write-Host "Release $tag already exists; keeping published assets and notes unchanged."
+            }
           } else {
             gh release create $tag @files `
               --target "${{ github.sha }}" `
