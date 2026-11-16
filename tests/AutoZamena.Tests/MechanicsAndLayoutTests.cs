@@ -214,6 +214,43 @@ public sealed class MechanicsAndLayoutTests
         Assert.Equal("привте ", engine.SimulateText("привте "));
     }
 
+    [Fact]
+    public void UserConfirmedUndo_IsAlwaysRememberedEvenWhenLegacySettingIsFalse()
+    {
+        var settings = new EngineSettings { AutoLearnOnUndo = false };
+        Assert.True(settings.AutoLearnOnUndo); // Old config value cannot disable user choice.
+        var engine = new AutoCorrectEngine(settings: settings);
+
+        Assert.Equal("привте", engine.SimulateText("привте \b"));
+        Assert.False(engine.UserDictionary.IsIgnored("привте"));
+        engine.OnWhitespace(' '); // The user confirms the restored spelling.
+        Assert.True(engine.UserDictionary.IsIgnored("привте"));
+        engine.ResetContext();
+        Assert.Equal("привте ", engine.SimulateText("привте "));
+    }
+
+    [Fact]
+    public void EditedOrAbandonedUndo_DoesNotLearnTheOriginalLater()
+    {
+        var engine = new AutoCorrectEngine();
+        Assert.Equal("привте", engine.SimulateText("привте \b"));
+        engine.OnBackspace(); // User edits the original instead of confirming it.
+        engine.ResetContext();
+        Assert.False(engine.UserDictionary.IsIgnored("привте"));
+        engine.SimulateText("привте ");
+        Assert.False(engine.UserDictionary.IsIgnored("привте"));
+    }
+
+    [Fact]
+    public void DoubleShiftAlwaysLearnsUserChoiceEvenWithLegacySettingDisabled()
+    {
+        var engine = new AutoCorrectEngine(settings: new EngineSettings { AutoLearnOnUndo = false });
+        Assert.Equal("привет ", engine.SimulateText("ghbdtn "));
+        CorrectionResult undo = engine.ConvertLastWordLayoutByHotkey();
+        Assert.Equal(CorrectionKind.HotkeyLayoutSwitch, undo.Kind);
+        Assert.True(engine.UserDictionary.IsIgnored("ghbdtn"));
+    }
+
     [Theory]
     [InlineData("xnj ", "что ")]
     [InlineData("rfr ", "как ")]

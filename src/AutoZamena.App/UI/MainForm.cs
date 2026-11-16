@@ -44,7 +44,6 @@ internal sealed class MainForm : Form
     private CheckBox _chkDoubleSpacePeriod = null!;
     private CheckBox _chkSmartTypography = null!;
     private CheckBox _chkUndoBackspace = null!;
-    private CheckBox _chkAutoLearnUndo = null!;
     private ComboBox _cmbLayoutMode = null!;
     private CheckBox _chkSwitchOsLayout = null!;
     private CheckBox _chkPlaySound = null!;
@@ -385,13 +384,12 @@ internal sealed class MainForm : Form
         _chkDoubleSpacePeriod = CreateOptionCheck("Точка с пробелом по двойному пробелу (привет␣␣ → привет. )");
         _chkSmartTypography = CreateOptionCheck("Заменять двойной дефис между пробелами на тире ( -- → — )");
         _chkUndoBackspace = CreateOptionCheck("Отменять исправление клавишей Backspace сразу после пробела");
-        _chkAutoLearnUndo = CreateOptionCheck("Добавлять отменённые слова в список исключений");
 
         flow.Controls.AddRange(new Control[]
         {
             _chkFixTypos, _chkSplitRunTogether, _chkFixDoubleCaps, _chkFixInvertedCaps, _chkFixRollover,
             _chkAutoCapSentence, _chkAutoCapFirst, _chkDoubleSpacePeriod, _chkSmartTypography,
-            _chkUndoBackspace, _chkAutoLearnUndo
+            _chkUndoBackspace
         });
 
         flow.Controls.Add(CreateSectionHeader("Раскладка клавиатуры"));
@@ -1102,7 +1100,6 @@ internal sealed class MainForm : Form
             _chkDoubleSpacePeriod.Checked = s.DoubleSpacePeriod;
             _chkSmartTypography.Checked = s.SmartTypography;
             _chkUndoBackspace.Checked = s.UndoOnImmediateBackspace;
-            _chkAutoLearnUndo.Checked = s.AutoLearnOnUndo;
             _cmbLayoutMode.SelectedIndex = (int)s.LayoutMode;
             _chkSwitchOsLayout.Checked = s.SwitchSystemLayoutOnAutoFix;
             _chkPlaySound.Checked = _config.PlaySoundOnAutoSwitch;
@@ -1148,7 +1145,6 @@ internal sealed class MainForm : Form
         s.DoubleSpacePeriod = _chkDoubleSpacePeriod.Checked;
         s.SmartTypography = _chkSmartTypography.Checked;
         s.UndoOnImmediateBackspace = _chkUndoBackspace.Checked;
-        s.AutoLearnOnUndo = _chkAutoLearnUndo.Checked;
         s.LayoutMode = (LayoutSwitchMode)Math.Clamp(_cmbLayoutMode.SelectedIndex, 0, 2);
         s.SwitchSystemLayoutOnAutoFix = _chkSwitchOsLayout.Checked;
 
