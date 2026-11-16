@@ -27,7 +27,8 @@ public static class NoisyChannelScorer
         ReadOnlySpan<KeyStrokeEvent> keystrokes,
         RuWordEntry? prevWord,
         SensitivityLevel sensitivity,
-        bool isMidSentenceCapitalized)
+        bool isMidSentenceCapitalized,
+        int customSensitivity = 50)
     {
         int len = typedLower.Length;
         if (len < 3)
@@ -36,8 +37,8 @@ public static class NoisyChannelScorer
         }
 
         int maxSymDist = len <= 4 ? 1 : 2;
-        float maxEditCost = GetMaxEditCost(len, sensitivity, isMidSentenceCapitalized);
-        float minScore = GetMinScore(len, sensitivity, isMidSentenceCapitalized);
+        float maxEditCost = GetMaxEditCost(len, sensitivity, isMidSentenceCapitalized, customSensitivity);
+        float minScore = GetMinScore(len, sensitivity, isMidSentenceCapitalized, customSensitivity);
         float lengthBonus = len >= 8 ? MathF.Min(0.55f, (len - 7) * 0.11f) : 0f;
         bool hasFastChord = HasAnyFastChord(keystrokes);
 
@@ -158,7 +159,8 @@ public static class NoisyChannelScorer
         ReadOnlySpan<KeyStrokeEvent> keystrokes,
         EnWordEntry? prevWord,
         SensitivityLevel sensitivity,
-        bool isMidSentenceCapitalized)
+        bool isMidSentenceCapitalized,
+        int customSensitivity = 50)
     {
         int len = typedLower.Length;
         if (len < 3)
@@ -167,8 +169,8 @@ public static class NoisyChannelScorer
         }
 
         int maxSymDist = len <= 4 ? 1 : 2;
-        float maxEditCost = GetMaxEditCost(len, sensitivity, isMidSentenceCapitalized);
-        float minScore = GetMinScore(len, sensitivity, isMidSentenceCapitalized);
+        float maxEditCost = GetMaxEditCost(len, sensitivity, isMidSentenceCapitalized, customSensitivity);
+        float minScore = GetMinScore(len, sensitivity, isMidSentenceCapitalized, customSensitivity);
         float lengthBonus = len >= 8 ? MathF.Min(0.55f, (len - 7) * 0.11f) : 0f;
         bool hasFastChord = HasAnyFastChord(keystrokes);
 
@@ -589,7 +591,17 @@ public static class NoisyChannelScorer
         return 0.88f;
     }
 
-    private static float GetMaxEditCost(int len, SensitivityLevel sensitivity, bool isMidSentenceCapitalized)
+    // A continuous user-selected value interpolates between the existing, tested presets.
+    // Clamping also protects against manually edited config.json values.
+    private static float InterpolateCustom(int value, float conservative, float balanced, float aggressive)
+    {
+        int percent = Math.Clamp(value, 0, 100);
+        return percent <= 50
+            ? conservative + (balanced - conservative) * (percent / 50f)
+            : balanced + (aggressive - balanced) * ((percent - 50) / 50f);
+    }
+
+    private static float GetMaxEditCost(int len, SensitivityLevel sensitivity, bool isMidSentenceCapitalized, int customSensitivity)
     {
         if (isMidSentenceCapitalized)
         {
@@ -609,11 +621,12 @@ public static class NoisyChannelScorer
         {
             SensitivityLevel.Conservative => MathF.Max(0.66f, baseMax - 0.28f),
             SensitivityLevel.Aggressive => baseMax + 0.22f,
+            SensitivityLevel.Custom => InterpolateCustom(customSensitivity, MathF.Max(0.66f, baseMax - 0.28f), baseMax, baseMax + 0.22f),
             _ => baseMax
         };
     }
 
-    private static float GetMinScore(int len, SensitivityLevel sensitivity, bool isMidSentenceCapitalized)
+    private static float GetMinScore(int len, SensitivityLevel sensitivity, bool isMidSentenceCapitalized, int customSensitivity)
     {
         float baseMin = len switch
         {
@@ -634,6 +647,7 @@ public static class NoisyChannelScorer
         {
             SensitivityLevel.Conservative => baseMin + 0.45f,
             SensitivityLevel.Aggressive => baseMin - 0.35f,
+            SensitivityLevel.Custom => InterpolateCustom(customSensitivity, baseMin + 0.45f, baseMin, baseMin - 0.35f),
             _ => baseMin
         };
     }

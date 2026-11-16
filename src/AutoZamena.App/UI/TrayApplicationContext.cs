@@ -117,9 +117,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _miAutoLayoutSwitch.CheckedChanged += (_, _) =>
         {
             if (_suppressTrayMenuEvents) return;
-            _config.Engine.LayoutMode = _miAutoLayoutSwitch.Checked
-                ? LayoutSwitchMode.AutoHighConfidenceAndHotkey
-                : LayoutSwitchMode.HotkeyOnly;
+            _config.Engine.LayoutMode = _config.Engine.LayoutMode.WithAutomaticCorrection(_miAutoLayoutSwitch.Checked);
             SaveAndSyncWithMainForm();
         };
 
@@ -378,7 +376,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _suppressTrayMenuEvents = true;
         try
         {
-            _miAutoLayoutSwitch.Checked = _config.Engine.LayoutMode == LayoutSwitchMode.AutoHighConfidenceAndHotkey;
+            _miAutoLayoutSwitch.Checked = _config.Engine.LayoutMode.AllowsAutomaticCorrection();
             _miSingleShift.Checked = _config.UseSingleShiftLayoutSwitch;
             _miSwitchSound.Checked = _config.PlaySoundOnAutoSwitch;
         }

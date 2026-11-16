@@ -960,7 +960,7 @@ public sealed class AutoCorrectEngine
         }
 
         // 2. Wrong keyboard layout auto-detection (e.g. "ghbdtn" -> "привет", "ghbdtn?" -> "привет,", "пщщпдуюсщь" -> "google.com")
-        if (Settings.LayoutMode == LayoutSwitchMode.AutoHighConfidenceAndHotkey &&
+        if (Settings.LayoutMode.AllowsAutomaticCorrection() &&
             (!TokenGuards.HasExpressiveLetterRepeat(rawSpan) || rawSpan.StartsWith("цццю", StringComparison.OrdinalIgnoreCase)) &&
             (allowWrongLayoutRaw || rawSpan == wordToken))
         {
@@ -1456,7 +1456,8 @@ public sealed class AutoCorrectEngine
                         eventsSpan,
                         _prevRuWord,
                         Settings.Sensitivity,
-                        isMidSentenceCap)
+                        isMidSentenceCap,
+                        Settings.CustomSensitivity)
                     : null;
 
                 // Never append a guessed trailing character on plain Enter ('\r'): protects browser omnibox / dropdown inline autocomplete
@@ -1556,7 +1557,8 @@ public sealed class AutoCorrectEngine
                         eventsSpan,
                         _prevEnWord,
                         Settings.Sensitivity,
-                        isMidSentenceCapitalized: isMidSentenceCap)
+                        isMidSentenceCapitalized: isMidSentenceCap,
+                        customSensitivity: Settings.CustomSensitivity)
                     : null;
 
                 if (delimiter == '\r' && bestEn.HasValue &&
@@ -1834,7 +1836,8 @@ public sealed class AutoCorrectEngine
                     ReadOnlySpan<KeyStrokeEvent>.Empty,
                     null,
                     Settings.Sensitivity,
-                    isMidSentenceCapitalized: false
+                    isMidSentenceCapitalized: false,
+                    customSensitivity: Settings.CustomSensitivity
                 );
                 if (cand1.HasValue && cand1.Value.EditCost <= 1.05f && cand1.Value.Score >= 1.70f)
                 {
@@ -1863,7 +1866,8 @@ public sealed class AutoCorrectEngine
                     ReadOnlySpan<KeyStrokeEvent>.Empty,
                     null,
                     Settings.Sensitivity,
-                    isMidSentenceCapitalized: false
+                    isMidSentenceCapitalized: false,
+                    customSensitivity: Settings.CustomSensitivity
                 );
                 if (cand0.HasValue && cand0.Value.EditCost <= 1.05f && cand0.Value.Score >= 1.70f)
                 {
@@ -1996,7 +2000,8 @@ public sealed class AutoCorrectEngine
                                 mappedEvents,
                                 _prevRuWord,
                                 Settings.Sensitivity,
-                                isMidSentenceCapitalized: false
+                                isMidSentenceCapitalized: false,
+                                customSensitivity: Settings.CustomSensitivity
                             );
                             if (ruTypoCand.HasValue && ruTypoCand.Value.EditCost <= 0.95f && ruTypoCand.Value.Score >= 1.15f)
                             {
@@ -2212,7 +2217,8 @@ public sealed class AutoCorrectEngine
                 ReadOnlySpan<KeyStrokeEvent>.Empty,
                 _prevEnWord,
                 Settings.Sensitivity,
-                isMidSentenceCapitalized: false
+                isMidSentenceCapitalized: false,
+                customSensitivity: Settings.CustomSensitivity
             );
             if (enTypo.HasValue && enTypo.Value.EditCost <= 0.88f && enTypo.Value.Score >= 1.60f)
             {
@@ -3041,7 +3047,7 @@ public sealed class AutoCorrectEngine
 
     private bool ShouldDeferEnPunctuationForLayout(char c)
     {
-        if (Settings.LayoutMode != LayoutSwitchMode.AutoHighConfidenceAndHotkey)
+        if (!Settings.LayoutMode.AllowsAutomaticCorrection())
         {
             return false;
         }
@@ -3130,7 +3136,7 @@ public sealed class AutoCorrectEngine
 
     private bool ShouldDeferEnTrailingSlashOrAmpersand()
     {
-        if (Settings.LayoutMode != LayoutSwitchMode.AutoHighConfidenceAndHotkey)
+        if (!Settings.LayoutMode.AllowsAutomaticCorrection())
         {
             return false;
         }

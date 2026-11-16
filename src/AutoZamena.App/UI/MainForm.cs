@@ -34,6 +34,8 @@ internal sealed class MainForm : Form
 
     // Tab 1: General
     private ComboBox _cmbSensitivity = null!;
+    private NumericUpDown _numCustomSensitivity = null!;
+    private FlowLayoutPanel _customSensitivityRow = null!;
     private CheckBox _chkFixTypos = null!;
     private CheckBox _chkSplitRunTogether = null!;
     private CheckBox _chkFixDoubleCaps = null!;
@@ -367,11 +369,36 @@ internal sealed class MainForm : Form
         {
             "Осторожная (только явные опечатки)",
             "Обычная (по умолчанию)",
-            "Высокая"
+            "Высокая",
+            "Свой уровень…"
         });
         _cmbSensitivity.SelectedIndexChanged += (_, _) => ApplyGeneralControls();
         sensPanel.Controls.Add(_cmbSensitivity);
         flow.Controls.Add(sensPanel);
+
+        _customSensitivityRow = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            FlowDirection = FlowDirection.LeftToRight,
+            Margin = new Padding(0, 0, 0, 8),
+            Visible = false
+        };
+        _customSensitivityRow.Controls.Add(new Label
+        {
+            Text = "Свой уровень (0 — осторожно, 100 — смелее):",
+            AutoSize = true,
+            Padding = new Padding(0, 5, 10, 0)
+        });
+        _numCustomSensitivity = new NumericUpDown
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Value = 50,
+            Width = 70
+        };
+        _numCustomSensitivity.ValueChanged += (_, _) => ApplyGeneralControls();
+        _customSensitivityRow.Controls.Add(_numCustomSensitivity);
+        flow.Controls.Add(_customSensitivityRow);
 
         flow.Controls.Add(CreateSectionHeader("Автозамена и набор"));
 
@@ -417,7 +444,8 @@ internal sealed class MainForm : Form
         {
             "Выключено",
             "Только вручную (2× Shift или горячая клавиша)",
-            "Автоматически и по 2× Shift"
+            "Автоматически и вручную",
+            "Только автоматически (без ручного перевода)"
         });
         _cmbLayoutMode.SelectedIndexChanged += (_, _) => ApplyGeneralControls();
         layoutRow.Controls.Add(_cmbLayoutMode);
@@ -1091,7 +1119,9 @@ internal sealed class MainForm : Form
         try
         {
             EngineSettings s = _config.Engine;
-            _cmbSensitivity.SelectedIndex = (int)s.Sensitivity;
+            _cmbSensitivity.SelectedIndex = Math.Clamp((int)s.Sensitivity, 0, 3);
+            _numCustomSensitivity.Value = Math.Clamp(s.CustomSensitivity, 0, 100);
+            _customSensitivityRow.Visible = s.Sensitivity == SensitivityLevel.Custom;
             _chkFixTypos.Checked = s.FixTypos;
             _chkSplitRunTogether.Checked = s.SplitRunTogetherWords;
             _chkFixDoubleCaps.Checked = s.FixDoubleCaps;
@@ -1103,7 +1133,7 @@ internal sealed class MainForm : Form
             _chkSmartTypography.Checked = s.SmartTypography;
             _chkUndoBackspace.Checked = s.UndoOnImmediateBackspace;
             _chkAutoLearnUndo.Checked = s.AutoLearnOnUndo;
-            _cmbLayoutMode.SelectedIndex = (int)s.LayoutMode;
+            _cmbLayoutMode.SelectedIndex = Math.Clamp((int)s.LayoutMode, 0, 3);
             _chkSwitchOsLayout.Checked = s.SwitchSystemLayoutOnAutoFix;
             _chkPlaySound.Checked = _config.PlaySoundOnAutoSwitch;
             _chkShowLangBadge.Checked = _config.ShowLanguageBadgeInTray;
@@ -1137,7 +1167,9 @@ internal sealed class MainForm : Form
         if (_suppressEvents) return;
 
         EngineSettings s = _config.Engine;
-        s.Sensitivity = (SensitivityLevel)Math.Clamp(_cmbSensitivity.SelectedIndex, 0, 2);
+        s.Sensitivity = (SensitivityLevel)Math.Clamp(_cmbSensitivity.SelectedIndex, 0, 3);
+        s.CustomSensitivity = (int)_numCustomSensitivity.Value;
+        _customSensitivityRow.Visible = s.Sensitivity == SensitivityLevel.Custom;
         s.FixTypos = _chkFixTypos.Checked;
         s.SplitRunTogetherWords = _chkSplitRunTogether.Checked;
         s.FixDoubleCaps = _chkFixDoubleCaps.Checked;
@@ -1149,7 +1181,7 @@ internal sealed class MainForm : Form
         s.SmartTypography = _chkSmartTypography.Checked;
         s.UndoOnImmediateBackspace = _chkUndoBackspace.Checked;
         s.AutoLearnOnUndo = _chkAutoLearnUndo.Checked;
-        s.LayoutMode = (LayoutSwitchMode)Math.Clamp(_cmbLayoutMode.SelectedIndex, 0, 2);
+        s.LayoutMode = (LayoutSwitchMode)Math.Clamp(_cmbLayoutMode.SelectedIndex, 0, 3);
         s.SwitchSystemLayoutOnAutoFix = _chkSwitchOsLayout.Checked;
 
         _config.PlaySoundOnAutoSwitch = _chkPlaySound.Checked;

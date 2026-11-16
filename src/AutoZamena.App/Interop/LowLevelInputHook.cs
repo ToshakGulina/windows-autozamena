@@ -163,10 +163,10 @@ public sealed class LowLevelInputHook : IDisposable
                     isKeyDown,
                     nowMs,
                     anyAltOrWin,
-                    enableDoubleShift: modCfg.UseDoubleShiftConvert,
+                    enableDoubleShift: modCfg.UseDoubleShiftConvert && modCfg.Engine.LayoutMode.AllowsManualConversion(),
                     enableBothShiftsPause: modCfg.UseBothShiftsPause,
                     enableSingleShift: modCfg.UseSingleShiftLayoutSwitch,
-                    enableDoubleCtrl: modCfg.UseDoubleCtrlConvertLine
+                    enableDoubleCtrl: modCfg.UseDoubleCtrlConvertLine && modCfg.Engine.LayoutMode.AllowsManualConversion()
                 );
 
                 IntPtr nextRes = NativeMethods.CallNextHookEx(_hKeyboardHook, nCode, wParam, lParam);
@@ -278,7 +278,7 @@ public sealed class LowLevelInputHook : IDisposable
         }
 
         // Optional custom layout-convert hotkey
-        if (!win && !cfg.ConvertLayoutHotkey.IsEmpty && cfg.Engine.LayoutMode != LayoutSwitchMode.Off)
+        if (!win && !cfg.ConvertLayoutHotkey.IsEmpty && cfg.Engine.LayoutMode.AllowsManualConversion())
         {
             bool singleMatch = cfg.ConvertLayoutHotkey.Matches(vk, ctrl, alt, shift);
             bool phraseMatch = !singleMatch &&
@@ -465,7 +465,7 @@ public sealed class LowLevelInputHook : IDisposable
 
         if (gesture == ModifierGesture.DoubleCtrl)
         {
-            if (status == ContextStatus.Allowed && cfg.Engine.LayoutMode != LayoutSwitchMode.Off)
+            if (status == ContextStatus.Allowed && cfg.Engine.LayoutMode.AllowsManualConversion())
             {
                 ThreadPool.QueueUserWorkItem(_ =>
                 {
@@ -485,7 +485,7 @@ public sealed class LowLevelInputHook : IDisposable
             return;
         }
 
-        if (gesture == ModifierGesture.DoubleShift && cfg.Engine.LayoutMode != LayoutSwitchMode.Off)
+        if (gesture == ModifierGesture.DoubleShift && cfg.Engine.LayoutMode.AllowsManualConversion())
         {
             bool fallbackToggle = !cfg.UseSingleShiftLayoutSwitch;
             bool hasLiveToken = false;
