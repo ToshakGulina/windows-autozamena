@@ -43,10 +43,7 @@ public sealed class EngineSettings
 
     // Undo & learning
     public bool UndoOnImmediateBackspace { get; set; } = true;
-
-    // Retain the old JSON setting for compatibility. A user-confirmed spelling is
-    // always learned now, even when an older config.json contains false.
-    public bool AutoLearnOnUndo { get => true; set { } }
+    public bool AutoLearnOnUndo { get; set; } = true;
 
     public EngineSettings Clone()
     {
@@ -65,7 +62,8 @@ public sealed class EngineSettings
             SmartTypography = SmartTypography,
             LayoutMode = LayoutMode,
             SwitchSystemLayoutOnAutoFix = SwitchSystemLayoutOnAutoFix,
-            UndoOnImmediateBackspace = UndoOnImmediateBackspace
+            UndoOnImmediateBackspace = UndoOnImmediateBackspace,
+            AutoLearnOnUndo = AutoLearnOnUndo
         };
     }
 }

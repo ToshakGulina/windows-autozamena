@@ -125,7 +125,6 @@ public sealed class AutoCorrectEngine
         _lastTailAddition = null;
         _lastCompletedForHotkey = null;
         _undoSnapshot = null;
-        _pendingLearnAfterUndo.Clear();
         _inCompoundToken = false;
         _canDoubleSpacePeriod = false;
     }
@@ -199,7 +198,6 @@ public sealed class AutoCorrectEngine
         _lastTailAddition = null;
         _lastCompletedForHotkey = null;
         _undoSnapshot = null;
-        _pendingLearnAfterUndo.Clear();
         _afterSentenceEndPunct = false;
         _suppressAutoCapOnce = false;
         _sawSentencePunctWithoutSpace = false;
@@ -471,9 +469,10 @@ public sealed class AutoCorrectEngine
             if (snap.LearnIgnoreOnConfirm && !string.IsNullOrEmpty(snap.OriginalTokenForLearn))
             {
                 _tempUndoSuppressed.Add(snap.OriginalTokenForLearn);
-                // Backspace restores the original token. Learn only when the user
-                // confirms that exact spelling with a delimiter, not while editing it.
-                _pendingLearnAfterUndo.Add(snap.OriginalTokenForLearn);
+                if (Settings.AutoLearnOnUndo)
+                {
+                    _pendingLearnAfterUndo.Add(snap.OriginalTokenForLearn);
+                }
             }
 
             if (snap.RestoreSentenceCapSuppression)
@@ -519,7 +518,6 @@ public sealed class AutoCorrectEngine
         }
 
         _undoSnapshot = null;
-        _pendingLearnAfterUndo.Clear(); // The user is editing, not confirming the restored spelling.
         _prevUnfixedStub = null;
         _lastTailAddition = null;
 
@@ -594,8 +592,7 @@ public sealed class AutoCorrectEngine
             if (snap.LearnIgnoreOnConfirm && !string.IsNullOrEmpty(snap.OriginalTokenForLearn))
             {
                 _tempUndoSuppressed.Add(snap.OriginalTokenForLearn);
-                if (TokenGuards.IsPureCyrillicWord(snap.OriginalTokenForLearn) ||
-                    TokenGuards.IsPureLatinWord(snap.OriginalTokenForLearn))
+                if (Settings.AutoLearnOnUndo && !snap.OriginalTokenForLearn.Contains(' '))
                 {
                     _userDictionary.AddIgnoredWord(snap.OriginalTokenForLearn);
                 }
@@ -863,15 +860,14 @@ public sealed class AutoCorrectEngine
         RuWordEntry? savedPrevRu = _prevRuWord;
         EnWordEntry? savedPrevEn = _prevEnWord;
 
-        // 0. Learn only the restored spelling the user actually confirms. Drop the
-        // pending choice on a different token so it cannot be learned much later.
-        string? confirmedWord = _pendingLearnAfterUndo.Remove(rawSpan) ? rawSpan
-            : _pendingLearnAfterUndo.Remove(wordToken) ? wordToken : null;
-        _pendingLearnAfterUndo.Clear();
-        if (confirmedWord is not null &&
-            (TokenGuards.IsPureCyrillicWord(confirmedWord) || TokenGuards.IsPureLatinWord(confirmedWord)))
+        // 0. If the user previously undid a word and now confirms that exact word with a delimiter -> learn it.
+        if (_pendingLearnAfterUndo.Remove(rawSpan))
         {
-            _userDictionary.AddIgnoredWord(confirmedWord);
+            _userDictionary.AddIgnoredWord(rawSpan);
+        }
+        else if (!string.IsNullOrEmpty(wordToken) && _pendingLearnAfterUndo.Remove(wordToken))
+        {
+            _userDictionary.AddIgnoredWord(wordToken);
         }
 
         // 1. User custom replacement / snippet (highest priority, explicit user intent; supports {{date}}, {{time}}, {{iso}}, {{clipboard}}, |)
