@@ -1925,15 +1925,15 @@ public sealed class AutoCorrectEngine
 
         // Two-key words are too ambiguous in isolation. In an established language context,
         // however, an unknown token mapping to a very common word is a safe correction.
-        // Keep known words in the typed language ("in", "on", "не", etc.) untouched.
+        // Keep common words in the typed language ("in", "on", "не", etc.) untouched.
         if (rawSpan.Length == 2 && delimiter == ' ')
         {
             if (savedPrevRu is not null && TokenGuards.IsPureLatinWord(rawSpan) &&
-                !_lexicon.IsKnownEnWord(rawSpan.ToLowerInvariant()) &&
+                (!_lexicon.TryGetEnWord(rawSpan.ToLowerInvariant(), out EnWordEntry typedEn) || typedEn.Zipf < 4.2f) &&
                 !_lexicon.IsProtectedWord(rawSpan.ToLowerInvariant()))
             {
                 string mapped = KeyboardGeometry.ConvertEnToRu(rawSpan);
-                if (_lexicon.TryGetRuWord(mapped.ToLowerInvariant(), out RuWordEntry ruShort) && ruShort.Zipf >= 4.8f)
+                if (_lexicon.TryGetRuWord(mapped.ToLowerInvariant(), out RuWordEntry ruShort) && ruShort.Zipf >= 5.5f)
                 {
                     return CommitCorrection(CorrectionKind.WrongLayout, rawSpan, rawSpan, mapped, delimiter,
                         Settings.SwitchSystemLayoutOnAutoFix ? TargetLanguage.Russian : TargetLanguage.None,
@@ -1941,11 +1941,11 @@ public sealed class AutoCorrectEngine
                 }
             }
             else if (savedPrevEn is not null && TokenGuards.IsPureCyrillicWord(rawSpan) &&
-                     !_lexicon.IsKnownRuWord(rawSpan.ToLowerInvariant()) &&
+                     (!_lexicon.TryGetRuWord(rawSpan.ToLowerInvariant(), out RuWordEntry typedRu) || typedRu.Zipf < 4.2f) &&
                      !_lexicon.IsProtectedWord(rawSpan.ToLowerInvariant()))
             {
                 string mapped = KeyboardGeometry.ConvertRuToEn(rawSpan);
-                if (_lexicon.TryGetEnWord(mapped.ToLowerInvariant(), out EnWordEntry enShort) && enShort.Zipf >= 4.8f)
+                if (_lexicon.TryGetEnWord(mapped.ToLowerInvariant(), out EnWordEntry enShort) && enShort.Zipf >= 5.5f)
                 {
                     return CommitCorrection(CorrectionKind.WrongLayout, rawSpan, rawSpan, mapped, delimiter,
                         Settings.SwitchSystemLayoutOnAutoFix ? TargetLanguage.English : TargetLanguage.None,
@@ -3145,7 +3145,9 @@ public sealed class AutoCorrectEngine
 
         if (_rawSinceWhitespace.Count == 0)
         {
-            return true;
+            // A comma after a delimiter cannot be an internal EN-key Russian letter.
+            // Deferring it here also prevents removing a tracked space before punctuation.
+            return false;
         }
 
         for (int i = 0; i < _rawSinceWhitespace.Count; i++)
