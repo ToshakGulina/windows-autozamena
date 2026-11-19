@@ -156,6 +156,32 @@ public sealed class MechanicsAndLayoutTests
         Assert.Equal(TargetLanguage.Russian, hk.SwitchLayoutTo);
     }
 
+    [Theory]
+    [InlineData("привет ,", "привет,")]
+    [InlineData("ghbdtn ,", "привет,")]
+    [InlineData("привет  ,", "привет. ,")] // double-space period is a separate feature
+    [InlineData(" ,", " ,")] // no tracked word: do not erase user whitespace
+    public void CommaAfterTrackedSpace_RemovesOnlyTheUnwantedSpace(string typed, string expected)
+    {
+        Assert.Equal(expected, new AutoCorrectEngine().SimulateText(typed));
+    }
+
+    [Fact]
+    public void CommaCleanup_DoesNotRunWhenSmartTypographyIsDisabled()
+    {
+        var engine = new AutoCorrectEngine(settings: new EngineSettings { SmartTypography = false });
+        Assert.Equal("привет ,", engine.SimulateText("привет ,"));
+    }
+
+    [Fact]
+    public void ContextualShortWrongLayout_RequiresStrongPreviousLanguageEvidence()
+    {
+        Assert.Equal("yt ", new AutoCorrectEngine().SimulateText("yt "));
+        Assert.Equal("привет не ", new AutoCorrectEngine().SimulateText("ghbdtn yt "));
+        Assert.Equal("hello it ", new AutoCorrectEngine().SimulateText("руддщ ше "));
+        Assert.Equal("привет in ", new AutoCorrectEngine().SimulateText("привет in "));
+    }
+
     [Fact]
     public void HotkeyLayoutConversion_WorksAfterSpaceOnKnownWordsAndTogglesBack()
     {
@@ -174,6 +200,19 @@ public sealed class MechanicsAndLayoutTests
         Assert.True(backToEn.HasChange);
         Assert.Equal("tot ", backToEn.ReplacementText);
         Assert.Equal(TargetLanguage.English, backToEn.SwitchLayoutTo);
+    }
+
+    [Fact]
+    public void DoubleShift_AfterSpaceConvertsUnknownLastWordWithoutSelectionOrClipboard()
+    {
+        var engine = new AutoCorrectEngine(settings: new EngineSettings { LayoutMode = LayoutSwitchMode.HotkeyOnly });
+        Assert.Equal("yt ", engine.SimulateText("yt "));
+        Assert.True(engine.HasLiveConvertibleToken);
+        CorrectionResult result = engine.ConvertLastWordLayoutByHotkey();
+        Assert.Equal(CorrectionKind.HotkeyLayoutSwitch, result.Kind);
+        Assert.Equal("не ", result.ReplacementText);
+        Assert.Equal(3, result.BackspacesCount);
+        Assert.Null(result.TrailingDelimiter);
     }
 
     [Fact]

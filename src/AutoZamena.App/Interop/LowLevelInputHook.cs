@@ -35,6 +35,7 @@ public sealed class LowLevelInputHook : IDisposable
     private long _lastKeyDownTick;
     private int _heldPrintableKeysCount;
     private IntPtr _lastTypingHkl;
+    private TargetLanguage _pendingAutoLayout;
     private ContextStatus _lastReportedStatus = ContextStatus.Allowed;
     private string _lastReportedProc = string.Empty;
 
@@ -242,6 +243,7 @@ public sealed class LowLevelInputHook : IDisposable
         if (focusChanged)
         {
             _lastTypingHkl = IntPtr.Zero;
+            _pendingAutoLayout = TargetLanguage.None;
             lock (_engineLock)
             {
                 _engine.ResetContext();
@@ -578,12 +580,18 @@ public sealed class LowLevelInputHook : IDisposable
         (_, _, IntPtr hkl, _) = NativeMethods.GetActiveFocusAndLayout();
         if (hkl != IntPtr.Zero)
         {
-            if (_lastTypingHkl != IntPtr.Zero && hkl != _lastTypingHkl && !AtomicTextInjector.WasRecentAutoLayoutSwitch(nowMs))
+            if (_lastTypingHkl != IntPtr.Zero && hkl != _lastTypingHkl)
             {
-                lock (_engineLock)
+                // The next printable key may arrive long after the 650 ms switch window.
+                // Compare the actual target HKL instead of wiping the completed word on our own switch.
+                if (KeyboardLayoutTransition.ShouldReset(_lastTypingHkl, hkl, _pendingAutoLayout))
                 {
-                    _engine.NotifyManualLayoutSwitch();
+                    lock (_engineLock)
+                    {
+                        _engine.NotifyManualLayoutSwitch();
+                    }
                 }
+                _pendingAutoLayout = TargetLanguage.None;
             }
             _lastTypingHkl = hkl;
         }
@@ -616,6 +624,11 @@ public sealed class LowLevelInputHook : IDisposable
 
     private void NotifyCorrection(CorrectionResult res, string procName, bool playSwitchSound)
     {
+        if (res.SwitchLayoutTo != TargetLanguage.None)
+        {
+            _pendingAutoLayout = res.SwitchLayoutTo;
+        }
+
         if (playSwitchSound && res.SwitchLayoutTo != TargetLanguage.None)
         {
             SoftSwitchSoundPlayer.PlayForLanguage(res.SwitchLayoutTo);

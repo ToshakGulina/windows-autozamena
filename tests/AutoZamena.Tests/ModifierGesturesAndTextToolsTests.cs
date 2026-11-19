@@ -12,6 +12,19 @@ namespace AutoZamena.Tests;
 public sealed class ModifierGesturesAndTextToolsTests
 {
     [Fact]
+    public void DelayedAutomaticHklChange_DoesNotDiscardTheWordNeededForDoubleShift()
+    {
+        // HKL changes are observed on the next printable key, potentially seconds after injection.
+        var english = new IntPtr(0x0409);
+        var russian = new IntPtr(0x0419);
+        Assert.False(KeyboardLayoutTransition.ShouldReset(english, russian, TargetLanguage.Russian));
+        Assert.False(KeyboardLayoutTransition.ShouldReset(russian, english, TargetLanguage.English));
+        Assert.True(KeyboardLayoutTransition.ShouldReset(english, russian, TargetLanguage.None));
+        Assert.True(KeyboardLayoutTransition.ShouldReset(english, russian, TargetLanguage.English));
+        Assert.False(KeyboardLayoutTransition.ShouldReset(IntPtr.Zero, russian, TargetLanguage.None));
+    }
+
+    [Fact]
     public void ModifierGestureTracker_DetectsDoubleShiftBothShiftsSingleShiftAndDoubleCtrl_WithoutFalsePositives()
     {
         var tracker = new ModifierGestureTracker();
