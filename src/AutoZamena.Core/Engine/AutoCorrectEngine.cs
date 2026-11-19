@@ -274,7 +274,8 @@ public sealed class AutoCorrectEngine
         if (IsImmediatePunctuationDelimiter(c))
         {
             // Could ',' or ';' be a Russian letter typed on an EN keyboard (e.g. 'k.,k.' = 'люблю' or ';bpym' = 'жизнь')?
-            if (ShouldDeferEnPunctuationForLayout(c))
+            // At a tracked word boundary after Space, a standalone comma is punctuation instead.
+            if (!(precededBySpace && _rawSinceWhitespace.Count == 0) && ShouldDeferEnPunctuationForLayout(c))
             {
                 _rawSinceWhitespace.Add(ev);
                 _wordEvents.Clear();
@@ -3145,9 +3146,7 @@ public sealed class AutoCorrectEngine
 
         if (_rawSinceWhitespace.Count == 0)
         {
-            // A comma after a delimiter cannot be an internal EN-key Russian letter.
-            // Deferring it here also prevents removing a tracked space before punctuation.
-            return false;
+            return true;
         }
 
         for (int i = 0; i < _rawSinceWhitespace.Count; i++)
