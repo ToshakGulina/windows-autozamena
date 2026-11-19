@@ -60,6 +60,7 @@ public sealed class AutoCorrectEngine
     private PendingBrokenStub? _prevUnfixedStub;
     private CompletedTailAddition? _lastTailAddition;
     private CompletedHotkeyToken? _lastCompletedForHotkey;
+    private bool _lastInputWasSpace;
     private UndoSnapshot? _undoSnapshot;
 
     private bool _afterSentenceEndPunct;
@@ -124,6 +125,7 @@ public sealed class AutoCorrectEngine
         _prevUnfixedStub = null;
         _lastTailAddition = null;
         _lastCompletedForHotkey = null;
+        _lastInputWasSpace = false;
         _undoSnapshot = null;
         _inCompoundToken = false;
         _canDoubleSpacePeriod = false;
@@ -197,6 +199,7 @@ public sealed class AutoCorrectEngine
         _prevUnfixedStub = null;
         _lastTailAddition = null;
         _lastCompletedForHotkey = null;
+        _lastInputWasSpace = false;
         _undoSnapshot = null;
         _afterSentenceEndPunct = false;
         _suppressAutoCapOnce = false;
@@ -224,6 +227,8 @@ public sealed class AutoCorrectEngine
             return OnWhitespace(c, ev.TimestampMs);
         }
 
+        bool precededBySpace = _lastInputWasSpace;
+        _lastInputWasSpace = false;
         _undoSnapshot = null;
         _canDoubleSpacePeriod = false;
 
@@ -269,15 +274,25 @@ public sealed class AutoCorrectEngine
         if (IsImmediatePunctuationDelimiter(c))
         {
             // Could ',' or ';' be a Russian letter typed on an EN keyboard (e.g. 'k.,k.' = 'люблю' or ';bpym' = 'жизнь')?
-            if (ShouldDeferEnPunctuationForLayout(c))
+            // At a tracked word boundary after Space, a standalone comma is punctuation instead.
+            if (!(precededBySpace && _rawSinceWhitespace.Count == 0) && ShouldDeferEnPunctuationForLayout(c))
             {
                 _rawSinceWhitespace.Add(ev);
                 _wordEvents.Clear();
                 return CorrectionResult.NoChange;
             }
 
-            CorrectionResult punctRes = EvaluateCurrentBufferOnDelimiter(c, ev.TimestampMs, allowWrongLayoutRaw: true);
+            // The space has already reached the target window. Replace it atomically with the comma;
+            // never delete whitespace at the start of a field or after a caret/context change.
+            bool removeSpace = c == ',' && precededBySpace && Settings.Enabled && Settings.SmartTypography &&
+                               _rawSinceWhitespace.Count == 0 &&
+                               _lastCompletedForHotkey is { TrailingDelimiter: " " };
+            CorrectionResult punctRes = removeSpace
+                ? new CorrectionResult(CorrectionKind.SmartPunctuation, " ,", ",", 1, ",", null,
+                    Reason: "Пробел перед запятой")
+                : EvaluateCurrentBufferOnDelimiter(c, ev.TimestampMs, allowWrongLayoutRaw: true);
 
+            _lastCompletedForHotkey = null;
             _wordEvents.Clear();
             _rawSinceWhitespace.Clear();
             _recentSpaceTokens.Clear();
@@ -348,6 +363,7 @@ public sealed class AutoCorrectEngine
     /// </summary>
     public CorrectionResult OnWhitespace(char whitespaceChar = ' ', long timestampMs = 0)
     {
+        _lastInputWasSpace = whitespaceChar == ' ';
         // Double-space -> ". " with next-word capitalization
         if (whitespaceChar == ' ' &&
             _rawSinceWhitespace.Count == 0 &&
@@ -1906,6 +1922,37 @@ public sealed class AutoCorrectEngine
         if (_tempUndoSuppressed.Contains(rawSpan) || _userDictionary.IsIgnored(rawSpan))
         {
             return null;
+        }
+
+        // Two-key words are too ambiguous in isolation. In an established language context,
+        // however, an unknown token mapping to a very common word is a safe correction.
+        // Keep common words in the typed language ("in", "on", "не", etc.) untouched.
+        if (rawSpan.Length == 2 && delimiter == ' ')
+        {
+            if (savedPrevRu is not null && TokenGuards.IsPureLatinWord(rawSpan) &&
+                (!_lexicon.TryGetEnWord(rawSpan.ToLowerInvariant(), out EnWordEntry typedEn) || typedEn.Zipf < 4.2f) &&
+                !_lexicon.IsProtectedWord(rawSpan.ToLowerInvariant()))
+            {
+                string mapped = KeyboardGeometry.ConvertEnToRu(rawSpan);
+                if (_lexicon.TryGetRuWord(mapped.ToLowerInvariant(), out RuWordEntry ruShort) && ruShort.Zipf >= 5.5f)
+                {
+                    return CommitCorrection(CorrectionKind.WrongLayout, rawSpan, rawSpan, mapped, delimiter,
+                        Settings.SwitchSystemLayoutOnAutoFix ? TargetLanguage.Russian : TargetLanguage.None,
+                        savedPrevRu, savedPrevEn, ruShort.Zipf, "Забытая раскладка EN→RU в контексте");
+                }
+            }
+            else if (savedPrevEn is not null && TokenGuards.IsPureCyrillicWord(rawSpan) &&
+                     (!_lexicon.TryGetRuWord(rawSpan.ToLowerInvariant(), out RuWordEntry typedRu) || typedRu.Zipf < 4.2f) &&
+                     !_lexicon.IsProtectedWord(rawSpan.ToLowerInvariant()))
+            {
+                string mapped = KeyboardGeometry.ConvertRuToEn(rawSpan);
+                if (_lexicon.TryGetEnWord(mapped.ToLowerInvariant(), out EnWordEntry enShort) && enShort.Zipf >= 5.5f)
+                {
+                    return CommitCorrection(CorrectionKind.WrongLayout, rawSpan, rawSpan, mapped, delimiter,
+                        Settings.SwitchSystemLayoutOnAutoFix ? TargetLanguage.English : TargetLanguage.None,
+                        savedPrevRu, savedPrevEn, enShort.Zipf, "Забытая раскладка RU→EN в контексте");
+                }
+            }
         }
 
         // Peel optional trailing EN-key Russian punctuation mark:
